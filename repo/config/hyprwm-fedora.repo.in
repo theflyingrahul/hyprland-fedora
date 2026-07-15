@@ -1,0 +1,9 @@
+[hyprwm-fedora]
+name=HyprWM Fedora @FEDORA_RELEASE@
+baseurl=@BASEURL@/$basearch/
+enabled=1
+pkg_gpgcheck=@PKG_GPGCHECK@
+repo_gpgcheck=@REPO_GPGCHECK@
+@GPGKEY_LINE@
+metadata_expire=1h
+skip_if_unavailable=0

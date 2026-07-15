@@ -1,0 +1,22 @@
+From: HyprWM Fedora maintainers
+Date: Wed, 15 Jul 2026 00:00:00 +0000
+Subject: [PATCH] cmake: preserve distribution compiler flags
+
+Do not append an optimization level after the flags supplied by the RPM
+build system.
+---
+ CMakeLists.txt | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 32a4138..7e232b7 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -48,7 +48,6 @@ if(CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES DEBUG)
+   message(STATUS "Configuring hyprlauncher in Debug")
+   add_compile_definitions(HYPRLAUNCHER_DEBUG)
+ else()
+-  add_compile_options(-O3)
+   message(STATUS "Configuring hyprlauncher in Release")
+ endif()
+ 

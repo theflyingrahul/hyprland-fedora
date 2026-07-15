@@ -1,0 +1,49 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] cmake: use release VCS metadata supplied by the build
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4b2095e..125db3f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -16,31 +16,10 @@ message(STATUS "Configuring hyprsunset!")
+ 
+ configure_file(systemd/hyprsunset.service.in systemd/hyprsunset.service @ONLY)
+ 
+-# Get git info hash and branch
+-execute_process(
+-  COMMAND git rev-parse --abbrev-ref HEAD
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_BRANCH
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+-
+-execute_process(
+-  COMMAND git rev-parse HEAD
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_COMMIT_HASH
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+-
+-execute_process(
+-  COMMAND bash -c "git show ${GIT_COMMIT_HASH} | head -n 5 | tail -n 1"
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_COMMIT_MESSAGE
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+-
+-execute_process(
+-  COMMAND bash -c "git diff-index --quiet HEAD -- || echo \"dirty\""
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_DIRTY
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+-#
++set(GIT_BRANCH "" CACHE STRING "Release branch or tag")
++set(GIT_COMMIT_HASH "" CACHE STRING "Release commit")
++set(GIT_COMMIT_MESSAGE "" CACHE STRING "Release commit message")
++set(GIT_DIRTY "" CACHE STRING "Release tree state")
+ 
+ include_directories(.)
+ set(CMAKE_CXX_STANDARD 26)
+@@ -103,4 +82,4 @@ protocolwayland()
+ 
+-pkg_check_modules(hyprland_protocols_dep REQUIRED IMPORTED_TARGET hyprland-protocols>=0.4.0)
++pkg_check_modules(hyprland_protocols_dep REQUIRED IMPORTED_TARGET hyprland-protocols>=0.6.2)
+ pkg_get_variable(HYPRLAND_PROTOCOLS hyprland-protocols pkgdatadir)
+ message(STATUS "hyprland-protocols dependency set to ${HYPRLAND_PROTOCOLS}")

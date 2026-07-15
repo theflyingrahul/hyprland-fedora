@@ -1,0 +1,8 @@
+[hyprwm-fedora]
+name=HyprWM Fedora 44 local repository
+baseurl=file:///srv/hyprwm-fedora/fedora/44/current/$basearch/
+enabled=1
+pkg_gpgcheck=0
+repo_gpgcheck=0
+metadata_expire=1h
+skip_if_unavailable=0

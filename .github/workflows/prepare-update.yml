@@ -1,0 +1,82 @@
+name: Prepare upstream update
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Source package name from the release-set manifest
+        required: true
+        type: string
+      tag:
+        description: Official upstream Git tag
+        required: true
+        type: string
+      version:
+        description: RPM version override when it cannot be derived from the tag
+        required: false
+        type: string
+      force:
+        description: Override a committed manual or pinned update policy
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: prepare-update-${{ inputs.package }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    container:
+      image: registry.fedoraproject.org/fedora@sha256:bf1977904d73dceee3f693ab77b025b352375a9d06345045ed22b0b1b232b836
+    steps:
+      - name: Install update tools
+        run: dnf --assumeyes --setopt=install_weak_deps=False install gh git make python3 python3-jsonschema rpm-build
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Prepare reviewed update
+        env:
+          PACKAGE: ${{ inputs.package }}
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ inputs.version }}
+          FORCE_UPDATE: ${{ inputs.force }}
+        run: |
+          args=(prepare-update "$PACKAGE" --tag "$TAG" --apply)
+          if [[ -n "$VERSION" ]]; then
+            args+=(--version "$VERSION")
+          fi
+          if [[ "$FORCE_UPDATE" == "true" ]]; then
+            args+=(--force)
+          fi
+          python3 tooling/hyprwm-packaging "${args[@]}"
+          make validate
+          make test-tooling
+      - name: Open update pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ inputs.package }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          branch="automation/update-$(printf '%s-%s' "$PACKAGE" "$TAG" | tr -cs 'A-Za-z0-9._-' '-')"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add \
+            manifests/release-set.json \
+            "packages/$PACKAGE" \
+            packages/hyprwm-meta/hyprwm-meta.spec
+          git diff --cached --quiet && {
+            echo "Update produced no changes" >&2
+            exit 1
+          }
+          git commit -m "Update $PACKAGE to $TAG" \
+            -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+          git push --set-upstream origin "$branch"
+          gh pr create \
+            --title "Update $PACKAGE to $TAG" \
+            --body "Automated official-upstream source, checksum, version, release, and changelog update. Dependency, ABI, patch, and installed-file changes require review; normal PR CI builds the affected release set."

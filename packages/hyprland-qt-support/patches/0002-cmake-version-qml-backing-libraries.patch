@@ -1,0 +1,27 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] cmake: version QML backing libraries
+
+The two QML backing libraries are installed in the system library directory.
+Give them package-local ABI version 0 so the runtime payload has valid SONAMEs
+and does not expose unversioned shared objects as ordinary runtime libraries.
+
+--- a/src/style/CMakeLists.txt
++++ b/src/style/CMakeLists.txt
+@@ -20,6 +20,8 @@ target_link_libraries(hyprland-quick-styleplugin PRIVATE Qt::Gui)
+ 
+ target_link_libraries(hyprland-quick-style PRIVATE hyprland-quick-style-impl)
+ 
++set_target_properties(hyprland-quick-style PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION 0)
++
+ install_qml_module(hyprland-quick-style)
+ 
+ if (BUILD_TESTER)
+--- a/src/style/impl/CMakeLists.txt
++++ b/src/style/impl/CMakeLists.txt
+@@ -15,4 +15,6 @@ qt_add_qml_module(hyprland-quick-style-impl
+ 
+ target_link_libraries(hyprland-quick-style-impl PRIVATE Qt::Quick hyprlang)
+ 
++set_target_properties(hyprland-quick-style-impl PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION 0)
++
+ install_qml_module(hyprland-quick-style-impl)

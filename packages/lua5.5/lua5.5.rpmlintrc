@@ -1,0 +1,4 @@
+# rpmlint treats the dot in versioned command names as a filename extension,
+# so it does not associate these existing section-1 manuals with the binaries.
+addFilter(r"no-manual-page-for-binary lua5\.5")
+addFilter(r"no-manual-page-for-binary luac5\.5")

@@ -1,0 +1,15 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] cmake: version the common runtime library
+
+The common library is installed in Fedora's system libdir and consumed by the
+two Qt plugins. Give it a package-local ABI version instead of shipping an
+unversioned runtime shared object.
+
+--- a/common/CMakeLists.txt
++++ b/common/CMakeLists.txt
+@@ -10,4 +10,5 @@ file(GLOB_RECURSE app_SRCS "*.cpp")
+ add_library(hyprqt6engine-common SHARED ${app_SRCS})
+ target_link_libraries(hyprqt6engine-common PRIVATE Qt6::Gui $<TARGET_NAME_IF_EXISTS:KF6::ConfigCore> $<TARGET_NAME_IF_EXISTS:KF6::ColorScheme> hyprutils hyprlang)
+ target_compile_definitions(hyprqt6engine-common PRIVATE $<$<TARGET_EXISTS:KF6::ConfigCore>:KF_CONFIGCORE_LIB> $<$<TARGET_EXISTS:KF6::ColorScheme>:KF_COLORSCHEME_LIB>)
++set_target_properties(hyprqt6engine-common PROPERTIES VERSION ${VER} SOVERSION 0)
+ install(TARGETS hyprqt6engine-common DESTINATION ${CMAKE_INSTALL_LIBDIR})

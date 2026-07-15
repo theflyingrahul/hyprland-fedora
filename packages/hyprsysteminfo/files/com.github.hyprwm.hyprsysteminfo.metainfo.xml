@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.github.hyprwm.hyprsysteminfo</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>BSD-3-Clause</project_license>
+  <name>Hyprsysteminfo</name>
+  <summary>Display system and Hyprland information</summary>
+  <description>
+    <p>
+      Hyprsysteminfo displays operating-system, hardware, graphics, desktop,
+      and running Hyprland details in a native graphical interface.
+    </p>
+  </description>
+  <launchable type="desktop-id">hyprsysteminfo.desktop</launchable>
+  <developer id="com.github.hyprwm">
+    <name>Hyprland Development</name>
+  </developer>
+  <url type="homepage">https://github.com/hyprwm/hyprsysteminfo</url>
+  <url type="bugtracker">https://github.com/hyprwm/hyprsysteminfo/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/hyprwm/hyprsysteminfo/v0.2.0/assets/showcase.png</image>
+      <caption>System and Hyprland information overview</caption>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.2.0" date="2026-04-25"/>
+  </releases>
+</component>

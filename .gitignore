@@ -1,0 +1,9 @@
+/.cache/
+/.work/
+/results/
+/repo/public/
+*.rpm
+*.log
+*.part
+__pycache__/
+*.pyc

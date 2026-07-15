@@ -1,0 +1,71 @@
+From: HyprWM Fedora maintainers
+Date: Wed, 15 Jul 2026 00:00:00 +0000
+Subject: [PATCH] cmake: accept release metadata without git
+
+Release archives do not contain a Git work tree. Permit packagers to supply
+the official tag metadata rather than invoking Git and embedding empty
+values.
+---
+ CMakeLists.txt | 49 +++++++++++++++++++++++++------------------------
+ 1 file changed, 25 insertions(+), 24 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index cfd8dd6..04ad917 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -12,30 +12,31 @@ set(CMAKE_MESSAGE_LOG_LEVEL "STATUS")
+ 
+ message(STATUS "Configuring hyprland-guiutils!")
+ 
+-# Get git info hash and branch
+-execute_process(
+-  COMMAND git rev-parse --abbrev-ref HEAD
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_BRANCH
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+-
+-execute_process(
+-  COMMAND git rev-parse HEAD
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_COMMIT_HASH
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+-
+-execute_process(
+-  COMMAND bash -c "git show ${GIT_COMMIT_HASH} | head -n 5 | tail -n 1 | sed -s 's/\#//g; s/^[[:space:]]*//'"
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_COMMIT_MESSAGE
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+-
+-execute_process(
+-  COMMAND bash -c "git diff-index --quiet HEAD -- || echo \"dirty\""
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_DIRTY
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
++if(NOT DEFINED GIT_COMMIT_HASH)
++  execute_process(
++    COMMAND git rev-parse --abbrev-ref HEAD
++    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
++    OUTPUT_VARIABLE GIT_BRANCH
++    OUTPUT_STRIP_TRAILING_WHITESPACE)
++
++  execute_process(
++    COMMAND git rev-parse HEAD
++    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
++    OUTPUT_VARIABLE GIT_COMMIT_HASH
++    OUTPUT_STRIP_TRAILING_WHITESPACE)
++
++  execute_process(
++    COMMAND bash -c "git show ${GIT_COMMIT_HASH} | head -n 5 | tail -n 1 | sed -s 's/\#//g; s/^[[:space:]]*//'"
++    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
++    OUTPUT_VARIABLE GIT_COMMIT_MESSAGE
++    OUTPUT_STRIP_TRAILING_WHITESPACE)
++
++  execute_process(
++    COMMAND bash -c "git diff-index --quiet HEAD -- || echo \"dirty\""
++    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
++    OUTPUT_VARIABLE GIT_DIRTY
++    OUTPUT_STRIP_TRAILING_WHITESPACE)
++endif()
+ 
+ include_directories(.)
+ set(CMAKE_CXX_STANDARD 23)

@@ -1,0 +1,629 @@
+{
+  "$schema": "./release-set.schema.json",
+  "schema_version": 1,
+  "name": "hyprwm-fedora-stable",
+  "fedora_release": 44,
+  "revision": "2026.07.15-1",
+  "architectures": [
+    "x86_64",
+    "aarch64"
+  ],
+  "packages": {
+    "glaze": {
+      "path": "packages/glaze",
+      "version": "7.2.0",
+      "release": 1,
+      "tier": 0,
+      "update_policy": "pinned",
+      "update_reason": "Match the Glaze 7.2.0 fallback selected by Hyprland 0.55.4; review upgrades with the complete release set.",
+      "build_after": [],
+      "sources": [
+        {
+          "filename": "glaze-7.2.0.tar.gz",
+          "url": "https://github.com/stephenberry/glaze/archive/refs/tags/v7.2.0.tar.gz",
+          "sha256": "17dba19ae63ae48f94994f00d49d5cb3c8f1306db1046c534c4828662490b7d4",
+          "provenance": "official-upstream",
+          "reference": "stephenberry/glaze tag v7.2.0"
+        }
+      ]
+    },
+    "lua5.5": {
+      "path": "packages/lua5.5",
+      "version": "5.5.0",
+      "release": 1,
+      "tier": 0,
+      "update_policy": "manual",
+      "update_reason": "Lua releases and official test archives are published by lua.org rather than a supported GitHub tag source.",
+      "build_after": [],
+      "sources": [
+        {
+          "filename": "lua-5.5.0.tar.gz",
+          "url": "https://www.lua.org/ftp/lua-5.5.0.tar.gz",
+          "sha256": "57ccc32bbbd005cab75bcc52444052535af691789dba2b9016d5c50640d68b3d",
+          "provenance": "official-upstream",
+          "reference": "Lua.org release 5.5.0"
+        },
+        {
+          "filename": "lua-5.5.0-tests.tar.gz",
+          "url": "https://www.lua.org/tests/lua-5.5.0-tests.tar.gz",
+          "sha256": "5e47bbfad7db2965d69580e918ee64edeb8d8d32de404b8dae9ce5c6d76a1472",
+          "provenance": "official-upstream",
+          "reference": "Lua.org 5.5.0 test suite"
+        },
+        {
+          "filename": "lua-5.5.0-bug1.patch",
+          "url": "https://src.fedoraproject.org/rpms/lua/raw/e658e44a5ef9c611b9f4d006599a792874ab6555/f/lua-5.5.0-bug1.patch",
+          "sha256": "7aea4d67cebf4f40a9b82356b7d0f7e11d3389f5e8a910fa17a88333a7b5cda7",
+          "provenance": "official-fedora",
+          "reference": "Fedora lua dist-git commit e658e44a5ef9c611b9f4d006599a792874ab6555"
+        },
+        {
+          "filename": "lua-5.5.0-bug2.patch",
+          "url": "https://src.fedoraproject.org/rpms/lua/raw/e658e44a5ef9c611b9f4d006599a792874ab6555/f/lua-5.5.0-bug2.patch",
+          "sha256": "3420c371dab80f570a87494f2f6e4ea9fcba1cacb632b2d0f61c438ae6499b0f",
+          "provenance": "official-fedora",
+          "reference": "Fedora lua dist-git commit e658e44a5ef9c611b9f4d006599a792874ab6555"
+        }
+      ]
+    },
+    "hyprwayland-scanner": {
+      "path": "packages/hyprwayland-scanner",
+      "version": "0.4.6",
+      "release": 1,
+      "tier": 1,
+      "build_after": [],
+      "sources": [
+        {
+          "filename": "hyprwayland-scanner-0.4.6.tar.gz",
+          "url": "https://github.com/hyprwm/hyprwayland-scanner/archive/refs/tags/v0.4.6.tar.gz",
+          "sha256": "05f55fd1a20d8ca81b5030980fdb7c87147749230145bdb3745af2741d617f5c",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprwayland-scanner tag v0.4.6"
+        }
+      ]
+    },
+    "hyprutils": {
+      "path": "packages/hyprutils",
+      "version": "0.13.1",
+      "release": 1,
+      "tier": 1,
+      "build_after": [],
+      "sources": [
+        {
+          "filename": "hyprutils-0.13.1.tar.gz",
+          "url": "https://github.com/hyprwm/hyprutils/archive/refs/tags/v0.13.1.tar.gz",
+          "sha256": "480ee026105deea64a24eb96d80cabe54b357594ce36cb05c021ea226c69aede",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprutils tag v0.13.1"
+        }
+      ]
+    },
+    "hyprland-protocols": {
+      "path": "packages/hyprland-protocols",
+      "version": "0.7.0",
+      "release": 1,
+      "tier": 1,
+      "build_after": [],
+      "sources": [
+        {
+          "filename": "hyprland-protocols-0.7.0.tar.gz",
+          "url": "https://github.com/hyprwm/hyprland-protocols/archive/refs/tags/v0.7.0.tar.gz",
+          "sha256": "ee419006d7cd20927b9b7c8b5fc430571c151b0385d600508de1a7957294498c",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprland-protocols tag v0.7.0"
+        }
+      ]
+    },
+    "hyprlang": {
+      "path": "packages/hyprlang",
+      "version": "0.6.8",
+      "release": 1,
+      "tier": 2,
+      "build_after": [
+        "hyprutils"
+      ],
+      "sources": [
+        {
+          "filename": "hyprlang-0.6.8.tar.gz",
+          "url": "https://github.com/hyprwm/hyprlang/archive/refs/tags/v0.6.8.tar.gz",
+          "sha256": "d10a0778b646e04d83e8b90cc0f764fb96958c01a15c3c0678d95a40fc647ed5",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprlang tag v0.6.8"
+        }
+      ]
+    },
+    "hyprgraphics": {
+      "path": "packages/hyprgraphics",
+      "version": "0.5.1",
+      "release": 1,
+      "tier": 2,
+      "build_after": [
+        "hyprutils"
+      ],
+      "sources": [
+        {
+          "filename": "hyprgraphics-0.5.1.tar.gz",
+          "url": "https://github.com/hyprwm/hyprgraphics/archive/refs/tags/v0.5.1.tar.gz",
+          "sha256": "861ecaad872835922dd5745a612d7a4cc7bfc4babb1d06bc92bc63c2ac013b74",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprgraphics tag v0.5.1"
+        },
+        {
+          "filename": "3b41722bc01e7b56b0c2bda5f9f819793bdf1596.patch",
+          "url": "https://github.com/hyprwm/hyprgraphics/commit/3b41722bc01e7b56b0c2bda5f9f819793bdf1596.patch",
+          "sha256": "72a22afb4382ce227b3a1c0e7460992492f70dbab0cc9c4ca93ca71a1dfaeefc",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprgraphics commit 3b41722bc01e7b56b0c2bda5f9f819793bdf1596"
+        },
+        {
+          "filename": "090db94649f25b476918f8afcfd443c02cc0a4b9.patch",
+          "url": "https://github.com/hyprwm/hyprgraphics/commit/090db94649f25b476918f8afcfd443c02cc0a4b9.patch",
+          "sha256": "2ae3604361cc30711ef2e0dbaffb7284f94dc1a41894c39e452d15bf4bedb003",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprgraphics commit 090db94649f25b476918f8afcfd443c02cc0a4b9"
+        }
+      ]
+    },
+    "hyprwire": {
+      "path": "packages/hyprwire",
+      "version": "0.3.1",
+      "release": 1,
+      "tier": 2,
+      "build_after": [
+        "hyprutils"
+      ],
+      "sources": [
+        {
+          "filename": "hyprwire-0.3.1.tar.gz",
+          "url": "https://github.com/hyprwm/hyprwire/archive/refs/tags/v0.3.1.tar.gz",
+          "sha256": "92a673d40ae6a7d66fbcd0a34ec071e026e17eaeeb0040c3375e4b2a80dba737",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprwire tag v0.3.1"
+        }
+      ]
+    },
+    "hyprcursor": {
+      "path": "packages/hyprcursor",
+      "version": "0.1.13",
+      "release": 1,
+      "tier": 3,
+      "build_after": [
+        "hyprlang"
+      ],
+      "sources": [
+        {
+          "filename": "hyprcursor-0.1.13.tar.gz",
+          "url": "https://github.com/hyprwm/hyprcursor/archive/refs/tags/v0.1.13.tar.gz",
+          "sha256": "82af8b2ce27242ffdd6baebaa71b3f6c8665dc25c52bfcfccc16912622896af8",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprcursor tag v0.1.13"
+        },
+        {
+          "filename": "HyprBibataModernClassicSVG.tar.gz",
+          "url": "https://src.fedoraproject.org/repo/pkgs/rpms/hyprcursor/HyprBibataModernClassicSVG.tar.gz/sha512/a1fff9d9a3a3b0de6824036559b495394a71bf56c25bd7cbd2bc0a3d51f74c09191c4695480ddc60e725a693d109aa7b174810ae43aa51542d0a8312a0e7e846/HyprBibataModernClassicSVG.tar.gz",
+          "sha256": "28362850b8c90b4361771f4fcf9133abed45d2d5b09154087396eecb4ee13bdf",
+          "provenance": "official-fedora",
+          "reference": "Fedora hyprcursor lookaside test source"
+        }
+      ]
+    },
+    "aquamarine": {
+      "path": "packages/aquamarine",
+      "version": "0.12.1",
+      "release": 1,
+      "tier": 3,
+      "build_after": [
+        "hyprutils",
+        "hyprwayland-scanner"
+      ],
+      "sources": [
+        {
+          "filename": "aquamarine-0.12.1.tar.gz",
+          "url": "https://github.com/hyprwm/aquamarine/archive/refs/tags/v0.12.1.tar.gz",
+          "sha256": "80120257c983e18dec78c4df03246931b1bca1e44e50fb41ca21bad772479bd9",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/aquamarine tag v0.12.1"
+        }
+      ]
+    },
+    "hyprland": {
+      "path": "packages/hyprland",
+      "version": "0.55.4",
+      "release": 3,
+      "tier": 4,
+      "update_policy": "manual",
+      "update_reason": "Hyprland updates require a repository-wide compatibility lock and an exact hyprland-plugins commit from upstream hyprpm.toml.",
+      "build_after": [
+        "aquamarine",
+        "glaze",
+        "hyprcursor",
+        "hyprgraphics",
+        "hyprland-protocols",
+        "hyprlang",
+        "hyprutils",
+        "hyprwayland-scanner",
+        "hyprwire",
+        "lua5.5"
+      ],
+      "sources": [
+        {
+          "filename": "hyprland-0.55.4.tar.gz",
+          "url": "https://github.com/hyprwm/Hyprland/releases/download/v0.55.4/source-v0.55.4.tar.gz",
+          "sha256": "10cdda47e6a42e603a646ffda89c9fca0628c3a8211e2fbbee02f6282effe30b",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/Hyprland release v0.55.4 at commit a0136d8c04687bb36eb8a28eb9d1ff92aea99704"
+        }
+      ]
+    },
+    "hyprtoolkit": {
+      "path": "packages/hyprtoolkit",
+      "version": "0.5.4",
+      "release": 1,
+      "tier": 4,
+      "build_after": [
+        "aquamarine",
+        "hyprgraphics",
+        "hyprlang",
+        "hyprutils",
+        "hyprwayland-scanner"
+      ],
+      "sources": [
+        {
+          "filename": "hyprtoolkit-0.5.4.tar.gz",
+          "url": "https://github.com/hyprwm/hyprtoolkit/archive/refs/tags/v0.5.4.tar.gz",
+          "sha256": "2fb59789f231c1c4e9154ceffc1e7524c0cae154807c0d57e6166806255b570f",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprtoolkit tag v0.5.4 at commit 795d06e76434a951855762104f2b0c8c3842e052"
+        }
+      ]
+    },
+    "hyprpaper": {
+      "path": "packages/hyprpaper",
+      "version": "0.8.4",
+      "release": 1,
+      "tier": 5,
+      "build_after": [
+        "hyprlang",
+        "hyprtoolkit",
+        "hyprutils",
+        "hyprwayland-scanner",
+        "hyprwire"
+      ],
+      "sources": [
+        {
+          "filename": "hyprpaper-0.8.4.tar.gz",
+          "url": "https://github.com/hyprwm/hyprpaper/archive/refs/tags/v0.8.4.tar.gz",
+          "sha256": "4912c7aede303918f38a3fc6b294429e2d541b639ebba67bcab58d1d367ea360",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprpaper tag v0.8.4 at commit 20fc0fa6c2056c388a4cd69cb394a9f989dd27c0"
+        }
+      ]
+    },
+    "hyprlock": {
+      "path": "packages/hyprlock",
+      "version": "0.9.5",
+      "release": 1,
+      "tier": 3,
+      "build_after": [
+        "hyprgraphics",
+        "hyprlang",
+        "hyprutils",
+        "hyprwayland-scanner"
+      ],
+      "sources": [
+        {
+          "filename": "hyprlock-0.9.5.tar.gz",
+          "url": "https://github.com/hyprwm/hyprlock/archive/refs/tags/v0.9.5.tar.gz",
+          "sha256": "cbc49fc5553c550131e1a15089847501de42579944814229bfa9f8ea18519f89",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprlock tag v0.9.5 at commit d75e93f8ee1721d70549d96f4d14bf2948aab70c"
+        }
+      ]
+    },
+    "hypridle": {
+      "path": "packages/hypridle",
+      "version": "0.1.7",
+      "release": 1,
+      "tier": 3,
+      "build_after": [
+        "hyprland-protocols",
+        "hyprlang",
+        "hyprutils",
+        "hyprwayland-scanner"
+      ],
+      "sources": [
+        {
+          "filename": "hypridle-0.1.7.tar.gz",
+          "url": "https://github.com/hyprwm/hypridle/archive/refs/tags/v0.1.7.tar.gz",
+          "sha256": "c4ef2e2894fc2082cfdabe7db086b1f246e3f0de571f7f2c6b26d7c0d9a5f8f3",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hypridle tag v0.1.7 at commit 5430b73ddf148651bcf35fa39ed4d757c7534028"
+        }
+      ]
+    },
+    "hyprpicker": {
+      "path": "packages/hyprpicker",
+      "version": "0.4.7",
+      "release": 1,
+      "tier": 2,
+      "build_after": [
+        "hyprutils",
+        "hyprwayland-scanner"
+      ],
+      "sources": [
+        {
+          "filename": "hyprpicker-0.4.7.tar.gz",
+          "url": "https://github.com/hyprwm/hyprpicker/archive/refs/tags/v0.4.7.tar.gz",
+          "sha256": "cde02b92abe372187c9d59a7cb2ca07ede5c3e1a8c81ed8b209dc0d3ac5f0339",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprpicker tag v0.4.7 at commit 8c163ce9b8a40f85babe4dd6e23a238787351164"
+        }
+      ]
+    },
+    "hyprsunset": {
+      "path": "packages/hyprsunset",
+      "version": "0.4.0",
+      "release": 1,
+      "tier": 3,
+      "build_after": [
+        "hyprland-protocols",
+        "hyprlang",
+        "hyprutils",
+        "hyprwayland-scanner"
+      ],
+      "sources": [
+        {
+          "filename": "hyprsunset-0.4.0.tar.gz",
+          "url": "https://github.com/hyprwm/hyprsunset/archive/refs/tags/v0.4.0.tar.gz",
+          "sha256": "5980e65ec650010e36c52e5f5acc0df9fd2d20051c63b89305bdc13276f237a6",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprsunset tag v0.4.0 at commit 25f704346ec22e7623b0873ef8c4573b57ca1512"
+        }
+      ]
+    },
+    "xdg-desktop-portal-hyprland": {
+      "path": "packages/xdg-desktop-portal-hyprland",
+      "version": "1.3.12",
+      "release": 1,
+      "tier": 3,
+      "build_after": [
+        "hyprland-protocols",
+        "hyprlang",
+        "hyprutils",
+        "hyprwayland-scanner"
+      ],
+      "sources": [
+        {
+          "filename": "xdg-desktop-portal-hyprland-1.3.12.tar.gz",
+          "url": "https://github.com/hyprwm/xdg-desktop-portal-hyprland/archive/refs/tags/v1.3.12.tar.gz",
+          "sha256": "c30ffe6ce9569a222438cb403d426a58c84e3653f19c8de641673097a9acc3b0",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/xdg-desktop-portal-hyprland tag v1.3.12 at commit 01e13c0a027a2d177df4dead76ac9d069e2cc8e6"
+        }
+      ]
+    },
+    "hyprqt6engine": {
+      "path": "packages/hyprqt6engine",
+      "version": "0.1.0",
+      "release": 3,
+      "tier": 3,
+      "build_after": [
+        "hyprlang",
+        "hyprutils"
+      ],
+      "sources": [
+        {
+          "filename": "hyprqt6engine-0.1.0.tar.gz",
+          "url": "https://github.com/hyprwm/hyprqt6engine/archive/refs/tags/v0.1.0.tar.gz",
+          "sha256": "e52692168faa51a53e6f05c12114e79ead76787045668c65d41225a13a318f62",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprqt6engine tag v0.1.0 at commit e8a694d5fc7813cf477f426dce731967e4cf670b"
+        }
+      ]
+    },
+    "hyprland-qt-support": {
+      "path": "packages/hyprland-qt-support",
+      "version": "0.1.0",
+      "release": 2,
+      "tier": 3,
+      "build_after": [
+        "hyprlang"
+      ],
+      "sources": [
+        {
+          "filename": "hyprland-qt-support-0.1.0.tar.gz",
+          "url": "https://github.com/hyprwm/hyprland-qt-support/archive/refs/tags/v0.1.0.tar.gz",
+          "sha256": "cac1f980bd088b890097f3f999cfdf03e73ee94c53f3c92d0b3bc23baa9e7b2c",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprland-qt-support tag v0.1.0 at commit 9d4437011b4f02e60e98a3e36c7fa14bb053b502"
+        }
+      ]
+    },
+    "hyprpolkitagent": {
+      "path": "packages/hyprpolkitagent",
+      "version": "0.1.3",
+      "release": 1,
+      "tier": 4,
+      "build_after": [
+        "hyprland-qt-support",
+        "hyprutils"
+      ],
+      "sources": [
+        {
+          "filename": "hyprpolkitagent-0.1.3.tar.gz",
+          "url": "https://github.com/hyprwm/hyprpolkitagent/archive/refs/tags/v0.1.3.tar.gz",
+          "sha256": "a8fa714b92d47331f056b608cb731dd1f5cc3845a9109cb22c6e6eb55b4eac84",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprpolkitagent tag v0.1.3 at commit 7e4054410f6d6331b239fea1c659ad6a917fbf6a"
+        }
+      ]
+    },
+    "hyprlauncher": {
+      "path": "packages/hyprlauncher",
+      "version": "0.1.6",
+      "release": 1,
+      "tier": 5,
+      "build_after": [
+        "aquamarine",
+        "hyprgraphics",
+        "hyprlang",
+        "hyprtoolkit",
+        "hyprutils",
+        "hyprwayland-scanner",
+        "hyprwire"
+      ],
+      "sources": [
+        {
+          "filename": "hyprlauncher-0.1.6.tar.gz",
+          "url": "https://github.com/hyprwm/hyprlauncher/archive/refs/tags/v0.1.6.tar.gz",
+          "sha256": "f02f93584e1017d7a466d0cafed910f630be39eba6b433922e645c834c4abf59",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprlauncher tag v0.1.6 at commit c682906a0836447c27c8d974f35493d3baa79d64"
+        }
+      ]
+    },
+    "hyprpwcenter": {
+      "path": "packages/hyprpwcenter",
+      "version": "0.1.2",
+      "release": 1,
+      "tier": 5,
+      "build_after": [
+        "aquamarine",
+        "hyprgraphics",
+        "hyprtoolkit",
+        "hyprutils"
+      ],
+      "sources": [
+        {
+          "filename": "hyprpwcenter-0.1.2.tar.gz",
+          "url": "https://github.com/hyprwm/hyprpwcenter/archive/refs/tags/v0.1.2.tar.gz",
+          "sha256": "ab4cfd4710566b07e98973d6723c24802d95774aa9c02aca839ff03e3bf09659",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprpwcenter tag v0.1.2 at commit 2ce8f3d174f2ae1c50c7dcc182d809a5ab33cad2"
+        }
+      ]
+    },
+    "hyprshutdown": {
+      "path": "packages/hyprshutdown",
+      "version": "0.1.1",
+      "release": 1,
+      "tier": 5,
+      "build_after": [
+        "aquamarine",
+        "glaze",
+        "hyprgraphics",
+        "hyprtoolkit",
+        "hyprutils"
+      ],
+      "sources": [
+        {
+          "filename": "hyprshutdown-0.1.1.tar.gz",
+          "url": "https://github.com/hyprwm/hyprshutdown/archive/refs/tags/v0.1.1.tar.gz",
+          "sha256": "32adb385b7bfe22398d45cd5325416bf0ac3ae4a5bd89678353dae96f92ba638",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprshutdown tag v0.1.1 at commit db1f38b03b173984ae9ed3abeb9750583c9bbd91"
+        }
+      ]
+    },
+    "hyprsysteminfo": {
+      "path": "packages/hyprsysteminfo",
+      "version": "0.2.0",
+      "release": 1,
+      "tier": 5,
+      "build_after": [
+        "aquamarine",
+        "glaze",
+        "hyprgraphics",
+        "hyprtoolkit",
+        "hyprutils"
+      ],
+      "sources": [
+        {
+          "filename": "hyprsysteminfo-0.2.0.tar.gz",
+          "url": "https://github.com/hyprwm/hyprsysteminfo/archive/refs/tags/v0.2.0.tar.gz",
+          "sha256": "4f875e7e986deeda35c05090b59f11f3b5802cac8863dafcc6e8251ea37530b1",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprsysteminfo tag v0.2.0 at commit 6f68a726531b53d87c6dd6ce474face27dde02ff"
+        }
+      ]
+    },
+    "hyprland-guiutils": {
+      "path": "packages/hyprland-guiutils",
+      "version": "0.2.1",
+      "release": 1,
+      "tier": 5,
+      "build_after": [
+        "aquamarine",
+        "hyprgraphics",
+        "hyprlang",
+        "hyprtoolkit",
+        "hyprutils"
+      ],
+      "sources": [
+        {
+          "filename": "hyprland-guiutils-0.2.1.tar.gz",
+          "url": "https://github.com/hyprwm/hyprland-guiutils/archive/refs/tags/v0.2.1.tar.gz",
+          "sha256": "8de6ab7295dd120bab6b6b3e884b27b3c6ccc38ae345f3144bf9b5ad79251bcb",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprland-guiutils tag v0.2.1 at commit c2e906261142f5dd1ee0bfc44abba23e2754c660"
+        }
+      ]
+    },
+    "hyprland-plugins": {
+      "path": "packages/hyprland-plugins",
+      "version": "0.55.0^20260512git3aa21f2",
+      "release": 1,
+      "tier": 7,
+      "update_policy": "manual",
+      "update_reason": "The source commit must be selected from upstream hyprpm.toml for the exact Hyprland commit.",
+      "build_after": [
+        "hyprland"
+      ],
+      "sources": [
+        {
+          "filename": "hyprland-plugins-3aa21f2.tar.gz",
+          "url": "https://github.com/hyprwm/hyprland-plugins/archive/3aa21f2e0ca72412f1b434c3126f8f1fec3c716c.tar.gz",
+          "sha256": "8c93cd4be1be9c13227c404c0e7da0c4b16f6e482e63d61f822c8f5e6da2cc9d",
+          "provenance": "official-upstream",
+          "reference": "hyprwm/hyprland-plugins commit 3aa21f2e0ca72412f1b434c3126f8f1fec3c716c pinned by upstream for Hyprland 0.55.4"
+        }
+      ]
+    },
+    "hyprwm-meta": {
+      "path": "packages/hyprwm-meta",
+      "version": "1",
+      "release": 4,
+      "tier": 8,
+      "update_policy": "manual",
+      "update_reason": "Repository-authored meta package; update it with release-set membership and EVR changes.",
+      "build_after": [
+        "hypridle",
+        "hyprland",
+        "hyprland-guiutils",
+        "hyprland-qt-support",
+        "hyprlauncher",
+        "hyprlock",
+        "hyprpaper",
+        "hyprpicker",
+        "hyprpolkitagent",
+        "hyprpwcenter",
+        "hyprqt6engine",
+        "hyprshutdown",
+        "hyprsunset",
+        "hyprsysteminfo",
+        "xdg-desktop-portal-hyprland"
+      ],
+      "sources": []
+    },
+    "hyprwm-fedora-release-local": {
+      "path": "packages/hyprwm-fedora-release-local",
+      "version": "44",
+      "release": 2,
+      "tier": 0,
+      "update_policy": "manual",
+      "update_reason": "Repository-authored unsigned local Fedora repository configuration package.",
+      "build_after": [],
+      "sources": []
+    }
+  }
+}

@@ -1,0 +1,41 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] cmake: require system dependencies and Fedora flags
+
+Do not override distribution optimization flags or fall back to bundled
+subprojects when required system dependencies are missing.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -17,7 +17,6 @@
+   message(STATUS "Configuring XDPH in Debug with CMake")
+   add_compile_definitions(HYPRLAND_DEBUG)
+ else()
+-  add_compile_options(-O3)
+   message(STATUS "Configuring XDPH in Release with CMake")
+ endif()
+ 
+@@ -67,21 +66,10 @@
+   hyprutils>=0.2.6
+   hyprwayland-scanner>=0.4.2)
+ 
+-# check whether we can find sdbus-c++ through pkg-config
+-pkg_check_modules(SDBUS IMPORTED_TARGET sdbus-c++>=2.0.0)
+-if(NOT SDBUS_FOUND)
+-  include_directories("subprojects/sdbus-cpp/include/")
+-  add_subdirectory(subprojects/sdbus-cpp EXCLUDE_FROM_ALL)
+-  add_library(PkgConfig::SDBUS ALIAS sdbus-c++)
+-endif()
++pkg_check_modules(SDBUS REQUIRED IMPORTED_TARGET sdbus-c++>=2.0.0)
+ 
+-# same for hyprland-protocols
+-pkg_check_modules(HYPRLAND_PROTOS IMPORTED_TARGET hyprland-protocols)
+-if(HYPRLAND_PROTOS_FOUND)
+-  set(HYPRLAND_PROTOCOLS "${HYPRLAND_PROTOS_PREFIX}/share/hyprland-protocols")
+-else()
+-  set(HYPRLAND_PROTOCOLS "${CMAKE_SOURCE_DIR}/subprojects/hyprland-protocols")
+-endif()
++pkg_check_modules(HYPRLAND_PROTOS REQUIRED IMPORTED_TARGET hyprland-protocols>=0.6.4)
++pkg_get_variable(HYPRLAND_PROTOCOLS hyprland-protocols pkgdatadir)
+ 
+ file(GLOB_RECURSE SRCFILES CONFIGURE_DEPENDS "src/*.cpp")
+ add_executable(xdg-desktop-portal-hyprland ${SRCFILES})

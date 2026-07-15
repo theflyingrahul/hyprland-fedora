@@ -1,0 +1,32 @@
+From: HyprWM Fedora maintainers
+Date: Wed, 15 Jul 2026 00:00:00 +0000
+Subject: [PATCH] cmake: use complete system Qt and KF6 dependencies
+
+Declare the Qt Quick Controls target used by the platform plugin, require
+the optional-at-build-time KDE integrations available in Fedora, and use
+GNUInstallDirs for the private common library.
+---
+ CMakeLists.txt | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 8cad338..2f91a12 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -8,11 +8,13 @@ project(hyprqt6engine VERSION ${VER} LANGUAGES CXX)
+ 
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+ 
+-find_package(Qt6 6.9 CONFIG REQUIRED COMPONENTS BuildInternals Core Widgets)
++include(GNUInstallDirs)
++
++find_package(Qt6 6.9 CONFIG REQUIRED COMPONENTS BuildInternals Core Widgets QuickControls2)
+ find_package(PkgConfig REQUIRED)
+-find_package(KF6Config)
+-find_package(KF6ColorScheme)
+-find_package(KF6IconThemes)
++find_package(KF6Config REQUIRED)
++find_package(KF6ColorScheme REQUIRED)
++find_package(KF6IconThemes REQUIRED)
+ 
+ get_target_property(QT_QTPATHS_EXECUTABLE Qt6::qtpaths IMPORTED_LOCATION)

@@ -1,0 +1,31 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] cmake: respect Fedora flags and test selection
+
+Do not replace the packager's BUILD_TESTING choice or append -O3 after the
+distribution flags. Coverage instrumentation must not be applied to the
+library that is installed into the RPM.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -35,11 +35,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
+ if(CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES DEBUG)
+   message(STATUS "Configuring hyprutils in Debug")
+   add_compile_definitions(HYPRLAND_DEBUG)
+-  set(BUILD_TESTING ON)
+ else()
+-  add_compile_options(-O3)
+   message(STATUS "Configuring hyprutils in Release")
+-  set(BUILD_TESTING OFF)
+ endif()
+ 
+ file(GLOB_RECURSE SRCFILES CONFIGURE_DEPENDS "src/*.cpp" "include/*.hpp")
+@@ -73,9 +70,6 @@ if(BUILD_TESTING)
+     PROPERTIES ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0"
+   )
+ 
+-  # Add coverage to hyprutils for test builds
+-  target_compile_options(hyprutils PRIVATE --coverage)
+-  target_link_options(hyprutils PRIVATE --coverage)
+ endif()
+ 
+ # Installation

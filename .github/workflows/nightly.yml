@@ -1,0 +1,117 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "27 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    container:
+      image: registry.fedoraproject.org/fedora@sha256:bf1977904d73dceee3f693ab77b025b352375a9d06345045ed22b0b1b232b836
+      options: --privileged
+    steps:
+      - name: Install checkout dependency
+        run: dnf --assumeyes --setopt=install_weak_deps=False install git
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Install Fedora build dependencies
+        run: ci/install-build-dependencies.sh
+      - name: Detect upstream releases
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 tooling/hyprwm-packaging check-updates --json > upstream-updates.json
+      - name: Report upstream releases
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        with:
+          script: |
+            const fs = require("fs");
+            const reports = JSON.parse(fs.readFileSync("upstream-updates.json", "utf8"));
+            const updates = reports.filter((item) => item.status === "update-available");
+            if (updates.length === 0) return;
+            const title = "[automation] Upstream HyprWM updates detected";
+            const body = [
+              "The scheduled official-upstream check found:",
+              "",
+              ...updates.map((item) => `- \`${item.package}\`: \`${item.current}\` → \`${item.latest}\` (${item.repository})`),
+              "",
+              `Workflow: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              "",
+              "This is a proposal signal only. Compatibility, SONAME, installed-file, and dependency changes still require review."
+            ].join("\n");
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100
+            });
+            const issue = existing.find((candidate) => candidate.title === title && !candidate.pull_request);
+            if (issue) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body
+              });
+            }
+      - name: Build locked nightly set
+        run: make build-set MOCK_CONFIG=mock/fedora-44-x86_64.cfg
+      - name: Test nightly repository
+        run: ci/install-test.sh mock/fedora-44-x86_64.cfg .work/repository
+      - name: Archive nightly build
+        if: always()
+        run: tar --zstd -cf hyprwm-fedora-nightly-x86_64.tar.zst results .work/repository upstream-updates.json
+      - name: Upload nightly build
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hyprwm-fedora-nightly-x86_64
+          path: hyprwm-fedora-nightly-x86_64.tar.zst
+          if-no-files-found: error
+          retention-days: 14
+      - name: Report nightly failure
+        if: failure()
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        with:
+          script: |
+            const title = "[automation] HyprWM Fedora nightly build failure";
+            const body = `Nightly build failed: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100
+            });
+            const issue = existing.find((candidate) => candidate.title === title && !candidate.pull_request);
+            if (issue) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body
+              });
+            }

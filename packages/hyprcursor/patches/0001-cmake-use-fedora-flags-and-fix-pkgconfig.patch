@@ -1,0 +1,25 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] build: use Fedora flags and fix public pkg-config dependency
+
+The public C and C++ headers include cairo/cairo.h, so consumers need Cairo's
+include flags. Fedora also supplies the optimization flags.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -46,7 +46,6 @@
+   message(STATUS "Configuring hyprcursor in Debug")
+   add_compile_definitions(HYPRLAND_DEBUG)
+ else()
+-  add_compile_options(-O3)
+   message(STATUS "Configuring hyprcursor in Release")
+ endif()
+ 
+--- a/hyprcursor.pc.in
++++ b/hyprcursor.pc.in
+@@ -6,5 +6,6 @@
+ URL: https://github.com/hyprwm/hyprcursor
+ Description: A library and toolkit for the Hyprland cursor format
+ Version: @HYPRCURSOR_VERSION@
++Requires: cairo
+ Cflags: -I${includedir}
+ Libs: -L${libdir} -lhyprcursor

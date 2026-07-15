@@ -1,0 +1,47 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] cmake: use Fedora flags and system dependencies
+
+Honor the packager's test selection, leave optimization and coverage
+instrumentation to Fedora, and advertise dependencies exposed by public
+headers. All dependencies remain required system packages.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -51,11 +51,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
+ if(CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES DEBUG)
+   message(STATUS "Configuring hyprtoolkit in Debug")
+   add_compile_definitions(HYPRTOOLKIT_DEBUG)
+-  set(BUILD_TESTING ON)
+ else()
+-  add_compile_options(-O3)
+   message(STATUS "Configuring hyprtoolkit in Release")
+-  set(BUILD_TESTING OFF)
+ endif()
+ 
+ add_compile_definitions(HT_HIDDEN=public)
+@@ -162,7 +159,5 @@ if(BUILD_TESTING)
+   file(GLOB_RECURSE TESTFILES CONFIGURE_DEPENDS "tests/unit/*.cpp")
+   add_executable(hyprtoolkit_tests ${TESTFILES})
+-  target_compile_options(hyprtoolkit_tests PRIVATE --coverage)
+-  target_link_options(hyprtoolkit_tests PRIVATE --coverage)
+   target_include_directories(
+     hyprtoolkit_tests
+     PUBLIC "./include"
+@@ -171,9 +166,5 @@ if(BUILD_TESTING)
+ 
+   gtest_discover_tests(hyprtoolkit_tests)
+-
+-  # Add coverage to hyprtoolkit
+-  target_compile_options(hyprtoolkit PRIVATE --coverage)
+-  target_link_options(hyprtoolkit PRIVATE --coverage)
+ endif()
+ 
+ # Installation
+--- a/hyprtoolkit.pc.in
++++ b/hyprtoolkit.pc.in
+@@ -7,4 +7,5 @@ URL: https://github.com/hyprwm/hyprtoolkit
+ Description: A modern C++ Wayland-native GUI toolkit
+ Version: @HYPRTOOLKIT_VERSION@
++Requires: aquamarine >= 0.10.0, hyprgraphics >= 0.3.0, hyprutils >= 0.11.0
+ Cflags: -I${includedir}
+ Libs: -L${libdir} -lhyprtoolkit

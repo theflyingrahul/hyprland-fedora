@@ -1,0 +1,45 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] cmake: use release VCS metadata supplied by the build
+
+Release archives do not contain a Git checkout. Accept deterministic metadata
+from the packaging build rather than invoking Git and shell pipelines.
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 9786536..33b535e 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -16,30 +16,10 @@ message(STATUS "Configuring hyprpaper!")
+ 
+ configure_file(systemd/hyprpaper.service.in systemd/hyprpaper.service @ONLY)
+ 
+-# Get git info hash and branch
+-execute_process(
+-  COMMAND git rev-parse --abbrev-ref HEAD
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_BRANCH
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+-
+-execute_process(
+-  COMMAND git rev-parse HEAD
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_COMMIT_HASH
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+-
+-execute_process(
+-  COMMAND bash -c "git show ${GIT_COMMIT_HASH} | head -n 5 | tail -n 1 | sed -s 's/\#//g; s/^[[:space:]]*//'"
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_COMMIT_MESSAGE
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+-
+-execute_process(
+-  COMMAND bash -c "git diff-index --quiet HEAD -- || echo \"dirty\""
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_DIRTY
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
++set(GIT_BRANCH "" CACHE STRING "Release branch or tag")
++set(GIT_COMMIT_HASH "" CACHE STRING "Release commit")
++set(GIT_COMMIT_MESSAGE "" CACHE STRING "Release commit message")
++set(GIT_DIRTY "" CACHE STRING "Release tree state")
+ 
+ include_directories(. hw-protocols protocols)
+ set(CMAKE_CXX_STANDARD 23)

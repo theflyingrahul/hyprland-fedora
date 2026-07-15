@@ -1,0 +1,43 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] cmake: use release VCS metadata supplied by the build
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 1520332..d7a3695 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -14,31 +14,10 @@ add_compile_definitions(HYPRPICKER_VERSION="${VERSION}")
+ 
+ message(STATUS "Configuring hyprpicker!")
+ 
+-# Get git info hash and branch
+-execute_process(
+-  COMMAND git rev-parse --abbrev-ref HEAD
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_BRANCH
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+-
+-execute_process(
+-  COMMAND git rev-parse HEAD
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_COMMIT_HASH
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+-
+-execute_process(
+-  COMMAND bash -c "git show ${GIT_COMMIT_HASH} | head -n 5 | tail -n 1"
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_COMMIT_MESSAGE
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+-
+-execute_process(
+-  COMMAND bash -c "git diff-index --quiet HEAD -- || echo \"dirty\""
+-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+-  OUTPUT_VARIABLE GIT_DIRTY
+-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+-#
++set(GIT_BRANCH "" CACHE STRING "Release branch or tag")
++set(GIT_COMMIT_HASH "" CACHE STRING "Release commit")
++set(GIT_COMMIT_MESSAGE "" CACHE STRING "Release commit message")
++set(GIT_DIRTY "" CACHE STRING "Release tree state")
+ 
+ include_directories(.)
+ set(CMAKE_CXX_STANDARD 23)

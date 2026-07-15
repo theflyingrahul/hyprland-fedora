@@ -1,0 +1,26 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] cmake: install runtime libraries in libdir
+
+The bare install(TARGETS) call places QML backing libraries in
+${CMAKE_INSTALL_PREFIX}/lib even on 64-bit Fedora. Use GNUInstallDirs while
+keeping the QML plugins in their module directories.
+
+--- a/cmake/install-qml-module.cmake
++++ b/cmake/install-qml-module.cmake
+@@ -39,11 +39,13 @@ function(install_qml_module arg_TARGET)
+         message(FATAL_ERROR "install_qml_modules called for a target without a plugin")
+     endif()
+ 
+-    # Install the target to /lib instead of the qml module dir.
++    # Install the target to the system libdir instead of the qml module dir.
+     # If installed to the module dir, inter-module dependencies will not work
+     # due to broken rpaths. The standard fix for this seems to be to just
+-    # put the library in /lib.
+-    install(TARGETS "${arg_TARGET}")
++    # put the library in the normal library directory.
++    install(TARGETS "${arg_TARGET}"
++        LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
++        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+ 
+     install(
+         TARGETS "${module_plugin_target}"

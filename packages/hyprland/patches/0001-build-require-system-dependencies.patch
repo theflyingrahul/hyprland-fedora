@@ -1,0 +1,92 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] build: require system dependencies
+
+Leave optimization to Fedora and make udis86, Glaze, and
+hyprland-protocols hard dependencies. Release builds must never fall back to
+bundled source trees or FetchContent network access.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -43,13 +43,9 @@ pkg_check_modules(udis_dep IMPORTED_TARGET udis86>=1.7.2)
+ # Find non-pkgconfig udis86, otherwise fallback to subproject
+ if(NOT udis_dep_FOUND)
+-  find_library(udis_nopc udis86)
+-  if(NOT("${udis_nopc}" MATCHES "udis_nopc-NOTFOUND"))
+-    message(STATUS "Found udis86 at ${udis_nopc}")
+-  else()
+-    add_subdirectory("subprojects/udis86")
+-    include_directories("subprojects/udis86")
+-    message(STATUS "udis86 dependency not found, falling back to subproject")
+-  endif()
++  find_library(udis_nopc udis86 REQUIRED)
++  find_path(udis_include udis86.h REQUIRED)
++  include_directories("${udis_include}")
++  message(STATUS "Found system udis86 at ${udis_nopc}")
+ endif()
+ 
+ find_library(librt rt)
+@@ -89,7 +85,6 @@ if(CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES DEBUG)
+   add_compile_definitions(HYPRLAND_DEBUG)
+   set(BUILD_TESTING ON)
+ else()
+-  add_compile_options(-O3)
+   message(STATUS "Configuring Hyprland in Release with CMake")
+   set(BUILD_TESTING OFF)
+ endif()
+@@ -514,7 +509,7 @@ else()
+   target_link_libraries(hyprland_lib PUBLIC OpenGL::EGL OpenGL::GLES3 glslang::glslang glslang::glslang-default-resource-limits glslang::SPIRV Threads::Threads)
+ endif()
+ 
+-pkg_check_modules(hyprland_protocols_dep hyprland-protocols>=0.6.4)
++pkg_check_modules(hyprland_protocols_dep REQUIRED hyprland-protocols>=0.6.4)
+ if(hyprland_protocols_dep_FOUND)
+   pkg_get_variable(HYPRLAND_PROTOCOLS hyprland-protocols pkgdatadir)
+   message(STATUS "hyprland-protocols dependency set to ${HYPRLAND_PROTOCOLS}")
+--- a/hyprpm/CMakeLists.txt
++++ b/hyprpm/CMakeLists.txt
+@@ -11,20 +11,7 @@ set(CMAKE_CXX_STANDARD 23)
+ 
+ pkg_check_modules(hyprpm_deps REQUIRED IMPORTED_TARGET tomlplusplus hyprutils>=0.7.0)
+ 
+-find_package(glaze 7...<8 QUIET)
+-if (NOT glaze_FOUND)
+-    set(GLAZE_VERSION v7.2.0)
+-    message(STATUS "hyprpm: glaze dependency not found, retrieving ${GLAZE_VERSION} with FetchContent")
+-    include(FetchContent)
+-    FetchContent_Declare(
+-        glaze
+-        GIT_REPOSITORY https://github.com/stephenberry/glaze.git
+-        GIT_TAG ${GLAZE_VERSION}
+-        GIT_SHALLOW TRUE
+-        EXCLUDE_FROM_ALL
+-    )
+-    FetchContent_MakeAvailable(glaze)
+-endif()
++find_package(glaze 7...<8 REQUIRED)
+ 
+ add_executable(hyprpm ${SRCFILES})
+ 
+--- a/start/CMakeLists.txt
++++ b/start/CMakeLists.txt
+@@ -11,20 +11,7 @@ find_package(PkgConfig REQUIRED)
+ 
+ pkg_check_modules(starthyprland_deps REQUIRED IMPORTED_TARGET hyprutils>=0.10.3)
+ 
+-find_package(glaze 7...<8 QUIET)
+-if (NOT glaze_FOUND)
+-    set(GLAZE_VERSION v7.2.0)
+-    message(STATUS "start: glaze dependency not found, retrieving ${GLAZE_VERSION} with FetchContent")
+-    include(FetchContent)
+-    FetchContent_Declare(
+-        glaze
+-        GIT_REPOSITORY https://github.com/stephenberry/glaze.git
+-        GIT_TAG ${GLAZE_VERSION}
+-        GIT_SHALLOW TRUE
+-        EXCLUDE_FROM_ALL
+-    )
+-    FetchContent_MakeAvailable(glaze)
+-endif()
++find_package(glaze 7...<8 REQUIRED)
+ 
+ file(GLOB_RECURSE SRCFILES CONFIGURE_DEPENDS "src/*.cpp")
+ 

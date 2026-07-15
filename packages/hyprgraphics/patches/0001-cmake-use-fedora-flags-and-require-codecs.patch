@@ -1,0 +1,33 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] cmake: use Fedora flags and require packaged codecs
+
+Fedora supplies optimization flags. The package also promises a stable image
+feature set, so configuration must fail rather than silently omit JPEG XL or
+HEIF/AVIF support.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -34,7 +34,6 @@
+   message(STATUS "Configuring hyprgraphics in Debug")
+   add_compile_definitions(HYPRGRAPHICS_DEBUG)
+ else()
+-  add_compile_options(-O3)
+   message(STATUS "Configuring hyprgraphics in Release")
+ endif()
+ 
+@@ -66,6 +65,7 @@
+ 
+ pkg_check_modules(
+   JXL
++  REQUIRED
+   IMPORTED_TARGET
+   libjxl
+   libjxl_cms
+@@ -80,6 +80,7 @@
+ 
+ pkg_check_modules(
+   HEIF
++  REQUIRED
+   IMPORTED_TARGET
+   libheif
+ )

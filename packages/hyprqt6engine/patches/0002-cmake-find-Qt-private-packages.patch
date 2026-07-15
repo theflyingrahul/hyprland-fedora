@@ -1,0 +1,16 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] cmake: find Qt private packages explicitly
+
+Fedora exports Qt6::GuiPrivate and Qt6::WidgetsPrivate from separate CMake
+packages. Locate those packages before the platform-theme target links them.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -12,5 +12,7 @@ include(GNUInstallDirs)
+ 
+ find_package(Qt6 6.9 CONFIG REQUIRED COMPONENTS BuildInternals Core Widgets QuickControls2)
++find_package(Qt6GuiPrivate 6.9 CONFIG REQUIRED)
++find_package(Qt6WidgetsPrivate 6.9 CONFIG REQUIRED)
+ find_package(PkgConfig REQUIRED)
+ find_package(KF6Config REQUIRED)
+ find_package(KF6ColorScheme REQUIRED)

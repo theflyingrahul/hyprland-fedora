@@ -1,0 +1,16 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] cmake: use Fedora optimization flags
+
+Fedora supplies optimization and hardening flags through the RPM CMake
+macros. Do not append a package-local -O3 after those flags.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -15,7 +15,6 @@ if(CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES DEBUG)
+   message(STATUS "Configuring hyprwayland-scanner in Debug with CMake")
+   add_compile_definitions(HYPRLAND_DEBUG)
+ else()
+-  add_compile_options(-O3)
+   message(STATUS "Configuring hyprwayland-scanner in Release with CMake")
+ endif()
+

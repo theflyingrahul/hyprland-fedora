@@ -1,0 +1,2274 @@
+#!/usr/bin/python3
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+
+ROOT = Path(__file__).resolve().parents[1]
+MANIFEST_PATH = ROOT / "manifests" / "release-set.json"
+CACHE_ROOT = ROOT / ".cache" / "sources"
+WORK_ROOT = ROOT / ".work"
+RESULTS_ROOT = ROOT / "results"
+PACKAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+SOURCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+~-]*$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+FEDORA_SOURCE_HOSTS = {
+    "src.fedoraproject.org",
+    "download.fedoraproject.org",
+    "kojipkgs.fedoraproject.org",
+}
+FORBIDDEN_SOURCE_HOSTS = {
+    "copr.fedorainfracloud.org",
+    "download.copr.fedorainfracloud.org",
+    "aur.archlinux.org",
+}
+HYPRWM_REPOSITORIES = {
+    "aquamarine",
+    "hyprcursor",
+    "hyprgraphics",
+    "hypridle",
+    "hyprland",
+    "hyprland-guiutils",
+    "hyprland-plugins",
+    "hyprland-protocols",
+    "hyprland-qt-support",
+    "hyprlang",
+    "hyprlauncher",
+    "hyprlock",
+    "hyprpaper",
+    "hyprpicker",
+    "hyprpolkitagent",
+    "hyprpwcenter",
+    "hyprqt6engine",
+    "hyprshutdown",
+    "hyprsunset",
+    "hyprsysteminfo",
+    "hyprtoolkit",
+    "hyprutils",
+    "hyprwayland-scanner",
+    "hyprwire",
+    "xdg-desktop-portal-hyprland",
+}
+
+
+class PackagingError(RuntimeError):
+    pass
+
+
+def run(command: list[str], *, cwd: Path | None = None) -> None:
+    print("+", " ".join(command), file=sys.stderr, flush=True)
+    subprocess.run(command, cwd=cwd, check=True)
+
+
+def output(command: list[str], *, cwd: Path | None = None) -> str:
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    ).stdout
+
+
+def require_command(name: str) -> None:
+    if shutil.which(name) is None:
+        raise PackagingError(f"required command is not installed: {name}")
+
+
+def atomic_write_text(path: Path, content: str) -> None:
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(content, encoding="utf-8")
+        if path.exists():
+            temporary.chmod(path.stat().st_mode)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def load_manifest() -> dict[str, Any]:
+    try:
+        with MANIFEST_PATH.open(encoding="utf-8") as stream:
+            data = json.load(stream)
+    except (OSError, json.JSONDecodeError) as error:
+        raise PackagingError(f"cannot load {MANIFEST_PATH}: {error}") from error
+
+    if not isinstance(data, dict):
+        raise PackagingError("release-set manifest must be a JSON object")
+    return data
+
+
+def packages_from(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    packages = data.get("packages")
+    if not isinstance(packages, dict):
+        raise PackagingError("manifest packages must be an object")
+    return packages
+
+
+def selected_packages(
+    data: dict[str, Any], names: list[str] | None = None
+) -> list[tuple[str, dict[str, Any]]]:
+    packages = packages_from(data)
+    if names:
+        missing = sorted(set(names) - packages.keys())
+        if missing:
+            raise PackagingError(f"unknown package(s): {', '.join(missing)}")
+        selected = [(name, packages[name]) for name in names]
+    else:
+        selected = list(packages.items())
+
+    return [
+        (name, package)
+        for name, package in selected
+        if package.get("enabled", True)
+    ]
+
+
+def package_path(package: dict[str, Any]) -> Path:
+    relative = package.get("path")
+    if not isinstance(relative, str):
+        raise PackagingError("package path must be a string")
+    path = (ROOT / relative).resolve()
+    packages_root = (ROOT / "packages").resolve()
+    if packages_root not in path.parents:
+        raise PackagingError(f"package path escapes packages/: {relative}")
+    return path
+
+
+def spec_path(name: str, package: dict[str, Any]) -> Path:
+    return package_path(package) / f"{name}.spec"
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def validate_local_inputs(
+    name: str,
+    package: dict[str, Any],
+    spec_text: str,
+) -> list[str]:
+    errors: list[str] = []
+    directory = package_path(package)
+    version = str(package.get("version", ""))
+    remote_filenames = {
+        source.get("filename")
+        for source in package.get("sources", [])
+        if isinstance(source, dict)
+    }
+    referenced: dict[str, set[str]] = {"files": set(), "patches": set()}
+    for directive, child_name in (("Source", "files"), ("Patch", "patches")):
+        pattern = rf"^{directive}\d*:\s*(\S+)\s*$"
+        for match in re.finditer(pattern, spec_text, re.MULTILINE):
+            value = (
+                match.group(1)
+                .replace("%{name}", name)
+                .replace("%{version}", version)
+            )
+            if directive == "Source" and (
+                "://" in value or "%{url}" in value
+            ):
+                continue
+            if "%" in value:
+                continue
+            filename = Path(value.split("#", 1)[0]).name
+            referenced[child_name].add(filename)
+            if (
+                filename not in remote_filenames
+                and not (directory / child_name / filename).is_file()
+            ):
+                errors.append(
+                    f"{name}: {directive} input is missing from "
+                    f"{child_name}/: {filename}"
+                )
+
+    for child_name, filenames in referenced.items():
+        child = directory / child_name
+        if not child.is_dir():
+            continue
+        unreferenced = sorted(
+            item.name
+            for item in child.iterdir()
+            if item.is_file() and item.name not in filenames
+        )
+        if unreferenced:
+            errors.append(
+                f"{name}: unreferenced {child_name} input(s): "
+                + ", ".join(unreferenced)
+            )
+    return errors
+
+
+def validate_json_schema(data: dict[str, Any]) -> list[str]:
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError:
+        return ["python3-jsonschema is required for manifest validation"]
+
+    schema_path = ROOT / "manifests" / "release-set.schema.json"
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        validator = Draft202012Validator(schema)
+    except (OSError, json.JSONDecodeError) as error:
+        return [f"cannot load manifest schema: {error}"]
+    return [
+        "schema: "
+        + ".".join(str(part) for part in error.absolute_path)
+        + (": " if error.absolute_path else "")
+        + error.message
+        for error in sorted(
+            validator.iter_errors(data),
+            key=lambda item: tuple(str(part) for part in item.path),
+        )
+    ]
+
+
+def official_upstream_allowed(package_name: str, url: str) -> bool:
+    parsed = urlparse(url)
+    if (
+        parsed.scheme != "https"
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or "%" in parsed.path
+        or "\\" in parsed.path
+    ):
+        return False
+    path_parts = parsed.path.split("/")
+    if (
+        len(path_parts) < 3
+        or path_parts[0] != ""
+        or any(part in {"", ".", ".."} for part in path_parts[1:])
+    ):
+        return False
+    if package_name == "glaze":
+        return (
+            len(path_parts) >= 4
+            and
+            parsed.hostname == "github.com"
+            and path_parts[1:3] == ["stephenberry", "glaze"]
+        )
+    if package_name == "lua5.5":
+        return (
+            parsed.hostname == "www.lua.org"
+            and path_parts[1] in {"ftp", "tests"}
+        )
+    if package_name in HYPRWM_REPOSITORIES:
+        repository = "Hyprland" if package_name == "hyprland" else package_name
+        return (
+            len(path_parts) >= 4
+            and
+            parsed.hostname == "github.com"
+            and path_parts[1:3] == ["hyprwm", repository]
+        )
+    return False
+
+
+def validate_meta_requirements(
+    data: dict[str, Any], spec_text: str
+) -> list[str]:
+    packages = packages_from(data)
+    source_overrides = {
+        "hyprland-backgrounds": "hyprland",
+    }
+    errors: list[str] = []
+    pattern = re.compile(
+        r"^Requires:\s+(\S+)\s*=\s*(\S+)-(\d+)%\{\?dist\}\s*$",
+        re.MULTILINE,
+    )
+    for binary_name, version, release_text in pattern.findall(spec_text):
+        source_name = source_overrides.get(binary_name, binary_name)
+        if source_name in {"hyprland-desktop", "hyprwm-complete"}:
+            continue
+        package = packages.get(source_name)
+        if not package:
+            continue
+        if (
+            version != package["version"]
+            or int(release_text) != package["release"]
+        ):
+            errors.append(
+                f"hyprwm-meta: {binary_name} requirement does not match "
+                f"{source_name} {package['version']}-{package['release']}"
+            )
+    return errors
+
+
+def validate_plugin_coupling(
+    data: dict[str, Any], spec_text: str
+) -> list[str]:
+    hyprland = packages_from(data)["hyprland"]
+    match = re.search(
+        r"^%global hyprland_evr\s+(\S+)-(\d+)%\{\?dist\}\s*$",
+        spec_text,
+        re.MULTILINE,
+    )
+    if not match:
+        return ["hyprland-plugins: missing exact hyprland_evr macro"]
+    if (
+        match.group(1) != hyprland["version"]
+        or int(match.group(2)) != hyprland["release"]
+    ):
+        return [
+            "hyprland-plugins: hyprland_evr does not match "
+            f"hyprland {hyprland['version']}-{hyprland['release']}"
+        ]
+    return []
+
+
+def validate_manifest(data: dict[str, Any]) -> list[str]:
+    errors: list[str] = validate_json_schema(data)
+    if data.get("schema_version") != 1:
+        errors.append("schema_version must be 1")
+    if data.get("fedora_release") != 44:
+        errors.append("fedora_release must be 44 for the initial release set")
+    if not re.fullmatch(r"[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9]+", str(data.get("revision", ""))):
+        errors.append("revision must match YYYY.MM.DD-N")
+
+    packages = data.get("packages")
+    if not isinstance(packages, dict):
+        return errors + ["packages must be an object"]
+
+    for name, package in sorted(packages.items()):
+        prefix = f"{name}: "
+        if not PACKAGE_RE.fullmatch(name):
+            errors.append(prefix + "invalid source package name")
+            continue
+        if not isinstance(package, dict):
+            errors.append(prefix + "package entry must be an object")
+            continue
+
+        try:
+            path = package_path(package)
+        except PackagingError as error:
+            errors.append(prefix + str(error))
+            continue
+
+        spec = spec_path(name, package)
+        if not path.is_dir():
+            errors.append(prefix + f"missing directory {path.relative_to(ROOT)}")
+        if not spec.is_file():
+            errors.append(prefix + f"missing spec {spec.relative_to(ROOT)}")
+
+        version = package.get("version")
+        release = package.get("release")
+        tier = package.get("tier")
+        if not isinstance(version, str) or not version:
+            errors.append(prefix + "version must be a non-empty string")
+        if not isinstance(release, int) or release < 1:
+            errors.append(prefix + "release must be a positive integer")
+        if not isinstance(tier, int) or tier < 0:
+            errors.append(prefix + "tier must be a non-negative integer")
+
+        dependencies = package.get("build_after")
+        if not isinstance(dependencies, list) or not all(
+            isinstance(item, str) and PACKAGE_RE.fullmatch(item)
+            for item in dependencies
+        ):
+            errors.append(prefix + "build_after must contain valid package names")
+        else:
+            unknown = sorted(set(dependencies) - packages.keys())
+            if unknown:
+                errors.append(prefix + f"unknown build_after entries: {', '.join(unknown)}")
+            if name in dependencies:
+                errors.append(prefix + "package cannot build after itself")
+
+        update_policy = package.get("update_policy", "automatic")
+        if update_policy not in {"automatic", "manual", "pinned"}:
+            errors.append(prefix + "invalid update_policy")
+        if update_policy != "automatic" and not isinstance(
+            package.get("update_reason"), str
+        ):
+            errors.append(
+                prefix + "manual or pinned updates require update_reason"
+            )
+
+        sources = package.get("sources")
+        if not isinstance(sources, list):
+            errors.append(prefix + "sources must be an array")
+        else:
+            seen: set[str] = set()
+            for source in sources:
+                if not isinstance(source, dict):
+                    errors.append(prefix + "source entry must be an object")
+                    continue
+                filename = source.get("filename")
+                url = source.get("url")
+                digest = source.get("sha256")
+                provenance = source.get("provenance")
+                reference = source.get("reference")
+                if not isinstance(filename, str) or not SOURCE_RE.fullmatch(filename):
+                    errors.append(prefix + f"invalid source filename: {filename!r}")
+                elif filename in seen:
+                    errors.append(prefix + f"duplicate source filename: {filename}")
+                else:
+                    seen.add(filename)
+                if not isinstance(url, str) or not url.startswith("https://"):
+                    errors.append(prefix + f"source URL must use HTTPS: {url!r}")
+                elif urlparse(url).hostname in FORBIDDEN_SOURCE_HOSTS:
+                    errors.append(prefix + f"forbidden source host: {urlparse(url).hostname}")
+                if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
+                    errors.append(prefix + f"invalid SHA-256 for {filename!r}")
+                if provenance not in {"official-upstream", "official-fedora"}:
+                    errors.append(prefix + f"invalid provenance for {filename!r}")
+                elif (
+                    provenance == "official-upstream"
+                    and isinstance(url, str)
+                    and not official_upstream_allowed(name, url)
+                ):
+                    errors.append(
+                        prefix
+                        + f"source is not from an approved upstream: {url!r}"
+                    )
+                elif (
+                    provenance == "official-fedora"
+                    and isinstance(url, str)
+                    and urlparse(url).hostname not in FEDORA_SOURCE_HOSTS
+                ):
+                    errors.append(
+                        prefix
+                        + f"official-fedora source uses non-Fedora host: {url!r}"
+                    )
+                if not isinstance(reference, str) or not reference:
+                    errors.append(prefix + f"missing provenance reference for {filename!r}")
+
+        if spec.is_file() and isinstance(version, str) and isinstance(release, int):
+            text = spec.read_text(encoding="utf-8")
+            version_match = re.search(r"^Version:\s*(\S+)\s*$", text, re.MULTILINE)
+            release_match = re.search(r"^Release:\s*(\d+)%\{\?dist\}\s*$", text, re.MULTILINE)
+            if not version_match or version_match.group(1) != version:
+                errors.append(prefix + "spec Version does not match manifest")
+            if not release_match or int(release_match.group(1)) != release:
+                errors.append(prefix + "spec Release does not match manifest")
+            if "/usr/local" in text:
+                errors.append(prefix + "spec must not install below /usr/local")
+            if "copr.fedorainfracloud.org" in text:
+                errors.append(prefix + "spec must not use COPR repositories")
+            if re.search(
+                r"^\s*(curl|wget|git\s+clone)\b",
+                text,
+                re.MULTILINE,
+            ):
+                errors.append(prefix + "spec contains a build-time network command")
+            errors.extend(validate_local_inputs(name, package, text))
+            if name == "hyprwm-meta":
+                errors.extend(validate_meta_requirements(data, text))
+            if name == "hyprland-plugins":
+                errors.extend(validate_plugin_coupling(data, text))
+
+    errors.extend(validate_graph(packages))
+    return errors
+
+
+def validate_graph(packages: dict[str, dict[str, Any]]) -> list[str]:
+    errors: list[str] = []
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(name: str, trail: list[str]) -> None:
+        if name in visited:
+            return
+        if name in visiting:
+            cycle = trail[trail.index(name) :] + [name]
+            errors.append("dependency cycle: " + " -> ".join(cycle))
+            return
+        visiting.add(name)
+        for dependency in packages[name].get("build_after", []):
+            if dependency in packages:
+                visit(dependency, trail + [dependency])
+        visiting.remove(name)
+        visited.add(name)
+
+    for name in packages:
+        visit(name, [name])
+    return errors
+
+
+def validate_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    errors = validate_manifest(data)
+    if errors:
+        for error in errors:
+            print(f"error: {error}", file=sys.stderr)
+        raise PackagingError(f"validation failed with {len(errors)} error(s)")
+    print(f"validated {len(packages_from(data))} package manifest entries")
+
+
+def fetch_source(name: str, source: dict[str, str]) -> Path:
+    package_cache = CACHE_ROOT / name
+    package_cache.mkdir(parents=True, exist_ok=True)
+    destination = package_cache / source["filename"]
+
+    if destination.is_file() and sha256(destination) == source["sha256"]:
+        print(f"verified {destination.relative_to(ROOT)}")
+        return destination
+
+    destination.unlink(missing_ok=True)
+    temporary = destination.with_suffix(destination.suffix + ".part")
+    temporary.unlink(missing_ok=True)
+    run(
+        [
+            "curl",
+            "--fail",
+            "--location",
+            "--proto",
+            "=https",
+            "--tlsv1.2",
+            "--retry",
+            "3",
+            "--output",
+            str(temporary),
+            source["url"],
+        ]
+    )
+    actual = sha256(temporary)
+    if actual != source["sha256"]:
+        temporary.unlink(missing_ok=True)
+        raise PackagingError(
+            f"{name}/{source['filename']}: SHA-256 mismatch: "
+            f"expected {source['sha256']}, got {actual}"
+        )
+    temporary.replace(destination)
+    print(f"fetched {destination.relative_to(ROOT)}")
+    return destination
+
+
+def fetch_packages(data: dict[str, Any], names: list[str] | None) -> None:
+    for name, package in selected_packages(data, names):
+        for source in package["sources"]:
+            fetch_source(name, source)
+
+
+def fetch_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    errors = validate_manifest(data)
+    if errors:
+        raise PackagingError("manifest must validate before fetching sources")
+    fetch_packages(data, args.packages or None)
+
+
+def prepare_sources(name: str, package: dict[str, Any]) -> Path:
+    source_dir = WORK_ROOT / "sources" / name
+    if source_dir.exists():
+        shutil.rmtree(source_dir)
+    source_dir.mkdir(parents=True)
+
+    for source in package["sources"]:
+        cached = fetch_source(name, source)
+        os.link(cached, source_dir / source["filename"])
+
+    directory = package_path(package)
+    for child_name in ("files", "patches"):
+        child = directory / child_name
+        if not child.is_dir():
+            continue
+        for item in sorted(child.iterdir()):
+            if item.is_file():
+                destination = source_dir / item.name
+                if destination.exists():
+                    raise PackagingError(f"duplicate source filename: {item.name}")
+                shutil.copy2(item, destination)
+    return source_dir
+
+
+def result_directory(mock_config: str, name: str, kind: str) -> Path:
+    config_name = Path(mock_config).stem
+    return RESULTS_ROOT / config_name / name / kind
+
+
+def build_srpm(
+    name: str, package: dict[str, Any], mock_config: str
+) -> Path:
+    source_dir = prepare_sources(name, package)
+    result_dir = result_directory(mock_config, name, "srpm")
+    if result_dir.exists():
+        shutil.rmtree(result_dir)
+    result_dir.mkdir(parents=True)
+    run(
+        [
+            "mock",
+            "-r",
+            mock_config,
+            "--buildsrpm",
+            "--spec",
+            str(spec_path(name, package)),
+            "--sources",
+            str(source_dir),
+            "--resultdir",
+            str(result_dir),
+        ],
+        cwd=ROOT,
+    )
+    candidates = sorted(result_dir.glob("*.src.rpm"))
+    if len(candidates) != 1:
+        raise PackagingError(
+            f"expected one source RPM for {name}, found {len(candidates)}"
+        )
+    return candidates[0]
+
+
+def srpm_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    errors = validate_manifest(data)
+    if errors:
+        raise PackagingError("manifest must validate before building")
+    packages = dict(selected_packages(data, [args.package]))
+    srpm = build_srpm(args.package, packages[args.package], args.mock_config)
+    print(srpm)
+
+
+def build_package(
+    name: str,
+    package: dict[str, Any],
+    mock_config: str,
+    repositories: list[Path],
+) -> Path:
+    srpm = build_srpm(name, package, mock_config)
+    result_dir = result_directory(mock_config, name, "rpm")
+    if result_dir.exists():
+        shutil.rmtree(result_dir)
+    result_dir.mkdir(parents=True)
+    command = [
+        "mock",
+        "-r",
+        mock_config,
+        "--rebuild",
+        str(srpm),
+        "--resultdir",
+        str(result_dir),
+    ]
+    for repository in repositories:
+        if (repository / "repodata" / "repomd.xml").is_file():
+            command.extend(["--addrepo", repository.resolve().as_uri()])
+    run(command, cwd=ROOT)
+    if not list(result_dir.glob("*.rpm")):
+        raise PackagingError(f"Mock produced no RPMs for {name}")
+    return result_dir
+
+
+def build_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    errors = validate_manifest(data)
+    if errors:
+        raise PackagingError("manifest must validate before building")
+    packages = dict(selected_packages(data, [args.package]))
+    result = build_package(
+        args.package,
+        packages[args.package],
+        args.mock_config,
+        [Path(args.repo)],
+    )
+    print(result)
+
+
+def affected_package_names(
+    data: dict[str, Any], changed: set[str]
+) -> set[str]:
+    packages = dict(selected_packages(data))
+    unknown = sorted(changed - packages.keys())
+    if unknown:
+        raise PackagingError(f"unknown package(s): {', '.join(unknown)}")
+
+    affected = set(changed)
+    progress = True
+    while progress:
+        progress = False
+        for name, package in packages.items():
+            if name in affected:
+                continue
+            if set(package.get("build_after", [])) & affected:
+                affected.add(name)
+                progress = True
+
+    required = set(affected)
+    progress = True
+    while progress:
+        progress = False
+        for name in tuple(required):
+            for dependency in packages[name].get("build_after", []):
+                if dependency not in required:
+                    required.add(dependency)
+                    progress = True
+    return required
+
+
+def ordered_packages(
+    data: dict[str, Any], names: set[str] | None = None
+) -> list[tuple[str, dict[str, Any]]]:
+    packages = dict(selected_packages(data))
+    if names is not None:
+        packages = {name: package for name, package in packages.items() if name in names}
+    completed: set[str] = set()
+    ordered: list[tuple[str, dict[str, Any]]] = []
+    while len(completed) < len(packages):
+        ready = [
+            (name, package)
+            for name, package in packages.items()
+            if name not in completed
+            and (
+                set(package.get("build_after", [])) & packages.keys()
+            )
+            <= completed
+        ]
+        if not ready:
+            remaining = sorted(set(packages) - completed)
+            raise PackagingError(
+                "cannot order package graph; remaining: " + ", ".join(remaining)
+            )
+        ready.sort(key=lambda item: (item[1]["tier"], item[0]))
+        for item in ready:
+            ordered.append(item)
+            completed.add(item[0])
+    return ordered
+
+
+def rpm_files(result_dir: Path) -> list[Path]:
+    return [
+        path
+        for path in result_dir.glob("*.rpm")
+        if not path.name.endswith(".src.rpm")
+    ]
+
+
+def revision_epoch(revision: str) -> int:
+    date_part, sequence_text = revision.split("-", 1)
+    date_part = date_part.replace(".", "-")
+    try:
+        timestamp = dt.datetime.fromisoformat(
+            date_part + "T00:00:00+00:00"
+        )
+    except ValueError as error:
+        raise PackagingError(f"invalid release revision date: {revision}") from error
+    return int(timestamp.timestamp()) + int(sequence_text) - 1
+
+
+def revision_key(revision: str) -> tuple[dt.date, int]:
+    date_part, sequence_text = revision.split("-", 1)
+    return (
+        dt.date.fromisoformat(date_part.replace(".", "-")),
+        int(sequence_text),
+    )
+
+
+def refresh_repository(repository: Path, revision: str) -> None:
+    packages_dir = repository / "Packages"
+    packages_dir.mkdir(parents=True, exist_ok=True)
+    command = [
+        "createrepo_c",
+        "--checksum",
+        "sha256",
+        "--repomd-checksum",
+        "sha256",
+        "--unique-md-filenames",
+        "--excludes",
+        "*.src.rpm",
+        "--revision",
+        str(revision_epoch(revision)),
+        "--set-timestamp-to-revision",
+    ]
+    comps = ROOT / "repo" / "comps" / "hyprwm.xml"
+    if comps.is_file():
+        command.extend(["--groupfile", str(comps)])
+    if (repository / "repodata" / "repomd.xml").is_file():
+        command.append("--update")
+    command.append(str(repository))
+    run(command)
+
+
+def add_results_to_repository(result_dir: Path, repository: Path) -> None:
+    packages_dir = repository / "Packages"
+    packages_dir.mkdir(parents=True, exist_ok=True)
+    for rpm in rpm_files(result_dir):
+        shutil.copy2(rpm, packages_dir / rpm.name)
+
+
+def rpm_metadata(path: Path) -> dict[str, str]:
+    query_format = (
+        "%{NAME}\\t%{VERSION}\\t%{RELEASE}\\t%{ARCH}\\t%{SOURCERPM}\\n"
+    )
+    fields = output(["rpm", "-qp", "--qf", query_format, str(path)]).strip().split(
+        "\t"
+    )
+    if len(fields) != 5:
+        raise PackagingError(f"cannot read RPM metadata from {path}")
+    return dict(zip(("name", "version", "release", "arch", "source_rpm"), fields))
+
+
+def current_artifacts(
+    data: dict[str, Any],
+    input_root: Path,
+    config_name: str,
+    *,
+    require_complete: bool,
+) -> dict[str, dict[str, list[Path]]]:
+    artifacts: dict[str, dict[str, list[Path]]] = {}
+    missing: list[str] = []
+    for source_name, package in selected_packages(data):
+        version = package["version"]
+        release_prefix = f"{package['release']}."
+        package_root = input_root / config_name / source_name
+        binary_rpms: list[Path] = []
+        for path in sorted((package_root / "rpm").glob("*.rpm")):
+            if path.name.endswith(".src.rpm"):
+                continue
+            metadata = rpm_metadata(path)
+            if (
+                metadata["version"] == version
+                and metadata["release"].startswith(release_prefix)
+                and metadata["source_rpm"].startswith(
+                    f"{source_name}-{version}-{package['release']}."
+                )
+            ):
+                binary_rpms.append(path)
+
+        source_rpms: list[Path] = []
+        for path in sorted((package_root / "srpm").glob("*.src.rpm")):
+            metadata = rpm_metadata(path)
+            if (
+                metadata["name"] == source_name
+                and metadata["version"] == version
+                and metadata["release"].startswith(release_prefix)
+            ):
+                source_rpms.append(path)
+
+        if not binary_rpms or len(source_rpms) != 1:
+            if require_complete:
+                missing.append(source_name)
+            continue
+        artifacts[source_name] = {
+            "rpms": binary_rpms,
+            "srpms": source_rpms,
+        }
+
+    if missing:
+        raise PackagingError(
+            f"{config_name}: missing current build artifacts for "
+            + ", ".join(missing)
+        )
+    return artifacts
+
+
+def copy_unique(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        if sha256(source) != sha256(destination):
+            raise PackagingError(
+                f"artifact filename collision with different content: "
+                f"{destination.name}"
+            )
+        return
+    shutil.copy2(source, destination)
+
+
+def populate_repository(
+    data: dict[str, Any],
+    input_root: Path,
+    config_name: str,
+    repository: Path,
+    *,
+    require_complete: bool,
+) -> dict[str, dict[str, list[Path]]]:
+    artifacts = current_artifacts(
+        data,
+        input_root,
+        config_name,
+        require_complete=require_complete,
+    )
+    for package_artifacts in artifacts.values():
+        for rpm in package_artifacts["rpms"]:
+            copy_unique(rpm, repository / "Packages" / rpm.name)
+    return artifacts
+
+
+def build_set_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    errors = validate_manifest(data)
+    if errors:
+        raise PackagingError("manifest must validate before building")
+
+    repository = Path(args.repo)
+    config_name = Path(args.mock_config).stem
+    available_names: set[str] = set()
+    if args.resume:
+        if repository.exists():
+            shutil.rmtree(repository)
+        (repository / "Packages").mkdir(parents=True)
+        available_names = set(
+            populate_repository(
+                data,
+                RESULTS_ROOT,
+                config_name,
+                repository,
+                require_complete=False,
+            )
+        )
+        refresh_repository(repository, data["revision"])
+    else:
+        if repository.exists():
+            shutil.rmtree(repository)
+        (repository / "Packages").mkdir(parents=True)
+    revision = data["revision"]
+    names = (
+        affected_package_names(data, set(args.packages))
+        if args.packages
+        else None
+    )
+    for name, package in ordered_packages(data, names):
+        if args.resume and name in available_names:
+            print(f"==> reusing {name}")
+            continue
+        print(f"==> building {name}")
+        result = build_package(name, package, args.mock_config, [repository])
+        add_results_to_repository(result, repository)
+        refresh_repository(repository, revision)
+        available_names.add(name)
+
+
+def affected_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    errors = validate_manifest(data)
+    if errors:
+        raise PackagingError("manifest must validate before graph selection")
+    names = affected_package_names(data, set(args.packages))
+    for name, _package in ordered_packages(data, names):
+        print(name)
+
+
+def repo_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    input_root = Path(args.input)
+    repository = Path(args.output)
+    if repository.exists():
+        shutil.rmtree(repository)
+    (repository / "Packages").mkdir(parents=True)
+    populate_repository(
+        data,
+        input_root,
+        args.config_name,
+        repository,
+        require_complete=args.require_complete,
+    )
+    refresh_repository(repository, data["revision"])
+
+
+def rpm_owned_files(path: Path) -> list[tuple[str, str]]:
+    query = "[%{FILENAMES}\\t%{FILEMODES:perms}\\n]"
+    records: list[tuple[str, str]] = []
+    for line in output(["rpm", "-qp", "--qf", query, str(path)]).splitlines():
+        filename, permissions = line.rsplit("\t", 1)
+        records.append((filename, permissions))
+    return records
+
+
+def audit_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    errors = validate_manifest(data)
+    if errors:
+        raise PackagingError("manifest must validate before package auditing")
+    artifacts = current_artifacts(
+        data,
+        Path(args.input),
+        args.config_name,
+        require_complete=args.require_complete,
+    )
+    rpms = sorted(
+        rpm
+        for package_artifacts in artifacts.values()
+        for rpm in package_artifacts["rpms"]
+    )
+    specs = [
+        spec_path(name, package)
+        for name, package in selected_packages(data)
+        if name in artifacts
+    ]
+    rpmlintrcs = [
+        path
+        for name, package in selected_packages(data)
+        if name in artifacts
+        for path in [package_path(package) / f"{name}.rpmlintrc"]
+        if path.is_file()
+    ]
+    if not rpms:
+        raise PackagingError(f"{args.config_name}: no RPMs to audit")
+
+    require_command("rpmlint")
+    rpmlint_command = ["rpmlint"]
+    with tempfile.TemporaryDirectory(prefix="hyprwm-rpmlint-") as temporary:
+        if rpmlintrcs:
+            combined_config = Path(temporary) / "combined.rpmlintrc"
+            combined_config.write_text(
+                "\n".join(
+                    path.read_text(encoding="utf-8")
+                    for path in rpmlintrcs
+                ),
+                encoding="utf-8",
+            )
+            rpmlint_command.extend(["--rpmlintrc", str(combined_config)])
+        rpmlint_command.extend(str(path) for path in specs + rpms)
+        run(rpmlint_command)
+
+    owners: dict[str, Path] = {}
+    duplicates: list[str] = []
+    forbidden: list[str] = []
+    for rpm in rpms:
+        for filename, permissions in rpm_owned_files(rpm):
+            if filename.startswith("/usr/local") or "/builddir/" in filename:
+                forbidden.append(f"{rpm.name}: {filename}")
+            if permissions.startswith("d"):
+                continue
+            previous = owners.get(filename)
+            if previous and previous != rpm:
+                duplicates.append(
+                    f"{filename}: {previous.name}, {rpm.name}"
+                )
+            else:
+                owners[filename] = rpm
+
+    if forbidden:
+        raise PackagingError(
+            "forbidden payload paths:\n" + "\n".join(sorted(forbidden))
+        )
+    if duplicates:
+        raise PackagingError(
+            "duplicate file ownership:\n" + "\n".join(sorted(duplicates))
+        )
+    print(
+        f"audited {len(artifacts)} source packages, "
+        f"{len(rpms)} binary RPMs, and {len(owners)} owned files"
+    )
+
+
+def normalize_tree_mtime(root: Path, timestamp: int) -> None:
+    for path in sorted(root.rglob("*"), reverse=True):
+        os.utime(path, (timestamp, timestamp), follow_symlinks=False)
+    os.utime(root, (timestamp, timestamp), follow_symlinks=False)
+
+
+def sign_rpms(paths: list[Path], key_id: str) -> None:
+    require_command("rpmsign")
+    for path in paths:
+        run(
+            [
+                "rpmsign",
+                "--define",
+                f"_gpg_name {key_id}",
+                "--addsign",
+                str(path),
+            ]
+        )
+
+
+def require_rpm_header_signature(path: Path) -> None:
+    signatures = output(
+        [
+            "rpm",
+            "-qp",
+            "--qf",
+            "%{OPENPGP:pgpsig}\\n"
+            "%{RSAHEADER:pgpsig}\\n"
+            "%{DSAHEADER:pgpsig}\\n",
+            str(path),
+        ]
+    ).splitlines()
+    if not any(
+        signature.strip() and signature.strip() != "(none)"
+        for signature in signatures
+    ):
+        raise PackagingError(f"RPM has no header signature: {path}")
+
+
+def sign_file(path: Path, key_id: str) -> None:
+    require_command("gpg")
+    run(
+        [
+            "gpg",
+            "--batch",
+            "--yes",
+            "--armor",
+            "--detach-sign",
+            "--local-user",
+            key_id,
+            "--output",
+            str(path.with_name(path.name + ".asc")),
+            str(path),
+        ]
+    )
+
+
+def sign_repomd(repository: Path, key_id: str) -> None:
+    sign_file(repository / "repodata" / "repomd.xml", key_id)
+
+
+def verify_detached_signature(path: Path, public_key: Path) -> None:
+    require_command("gpg")
+    with tempfile.TemporaryDirectory(prefix="hyprwm-gpg-check-") as temp:
+        gnupg = Path(temp)
+        gnupg.chmod(0o700)
+        run(["gpg", "--homedir", str(gnupg), "--batch", "--import", str(public_key)])
+        run(
+            [
+                "gpg",
+                "--homedir",
+                str(gnupg),
+                "--batch",
+                "--verify",
+                str(path.with_name(path.name + ".asc")),
+                str(path),
+            ]
+        )
+
+
+def verify_signatures(
+    repository: Path, rpm_paths: list[Path], public_key: Path
+) -> None:
+    require_command("rpm")
+    require_command("rpmkeys")
+    require_command("gpg")
+    with tempfile.TemporaryDirectory(prefix="hyprwm-signature-check-") as temp:
+        temporary = Path(temp)
+        rpmdb = temporary / "rpmdb"
+        gnupg = temporary / "gnupg"
+        rpmdb.mkdir()
+        gnupg.mkdir(mode=0o700)
+        run(["rpm", "--dbpath", str(rpmdb), "--initdb"])
+        run(
+            [
+                "rpm",
+                "--dbpath",
+                str(rpmdb),
+                "--import",
+                str(public_key),
+            ]
+        )
+        for path in rpm_paths:
+            require_rpm_header_signature(path)
+            run(
+                [
+                    "rpmkeys",
+                    "--dbpath",
+                    str(rpmdb),
+                    "--checksig",
+                    str(path),
+                ]
+            )
+        run(["gpg", "--homedir", str(gnupg), "--batch", "--import", str(public_key)])
+        repomd = repository / "repodata" / "repomd.xml"
+        for path in (repomd, repository / "manifest.json"):
+            run(
+                [
+                    "gpg",
+                    "--homedir",
+                    str(gnupg),
+                    "--batch",
+                    "--verify",
+                    str(path.with_name(path.name + ".asc")),
+                    str(path),
+                ]
+            )
+
+
+def render_repo_config(
+    destination: Path,
+    *,
+    fedora_release: int,
+    baseurl: str,
+    signed: bool,
+) -> None:
+    template = (
+        ROOT / "repo" / "config" / "hyprwm-fedora.repo.in"
+    ).read_text(encoding="utf-8")
+    rendered = (
+        template.replace("@FEDORA_RELEASE@", str(fedora_release))
+        .replace("@BASEURL@", baseurl.rstrip("/"))
+        .replace("@PKG_GPGCHECK@", "1" if signed else "0")
+        .replace("@REPO_GPGCHECK@", "1" if signed else "0")
+        .replace(
+            "@GPGKEY_LINE@",
+            (
+                "gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-hyprwm-fedora"
+                if signed
+                else "# unsigned local snapshot"
+            ),
+        )
+    )
+    destination.write_text(rendered, encoding="utf-8")
+
+
+def binary_manifest_entries(repository: Path) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for path in sorted((repository / "Packages").glob("*.rpm")):
+        metadata = rpm_metadata(path)
+        entries.append(
+            {
+                **metadata,
+                "filename": path.name,
+                "sha256": sha256(path),
+                "size": path.stat().st_size,
+            }
+        )
+    return entries
+
+
+def snapshot_manifest(
+    data: dict[str, Any],
+    architecture: str,
+    repository: Path,
+    source_packages: dict[str, dict[str, list[Path]]],
+) -> dict[str, Any]:
+    source_entries = [
+        {
+            "source_package": source_name,
+            "filename": paths["srpms"][0].name,
+            "sha256": sha256(repository / "SRPMS" / paths["srpms"][0].name),
+            "sources": data["packages"][source_name]["sources"],
+        }
+        for source_name, paths in sorted(source_packages.items())
+    ]
+    repomd = repository / "repodata" / "repomd.xml"
+    return {
+        "schema_version": 1,
+        "name": data["name"],
+        "revision": data["revision"],
+        "fedora_release": data["fedora_release"],
+        "architecture": architecture,
+        "repomd_sha256": sha256(repomd),
+        "packages": binary_manifest_entries(repository),
+        "source_packages": source_entries,
+    }
+
+
+def validate_manifest_source(
+    source_package: str,
+    source: dict[str, Any],
+) -> None:
+    required = {"filename", "url", "sha256", "provenance", "reference"}
+    if set(source) != required:
+        raise PackagingError(
+            f"{source_package}: invalid signed source metadata fields"
+        )
+    if (
+        not isinstance(source["filename"], str)
+        or not SOURCE_RE.fullmatch(source["filename"])
+        or not isinstance(source["sha256"], str)
+        or not SHA256_RE.fullmatch(source["sha256"])
+        or not isinstance(source["reference"], str)
+        or not source["reference"]
+    ):
+        raise PackagingError(
+            f"{source_package}: malformed signed source metadata"
+        )
+    provenance = source["provenance"]
+    url = source["url"]
+    if provenance == "official-upstream":
+        if not isinstance(url, str) or not official_upstream_allowed(
+            source_package, url
+        ):
+            raise PackagingError(
+                f"{source_package}: unapproved signed upstream source"
+            )
+    elif provenance == "official-fedora":
+        if (
+            not isinstance(url, str)
+            or urlparse(url).scheme != "https"
+            or urlparse(url).hostname not in FEDORA_SOURCE_HOSTS
+        ):
+            raise PackagingError(
+                f"{source_package}: unapproved signed Fedora source"
+            )
+    else:
+        raise PackagingError(
+            f"{source_package}: invalid signed source provenance"
+        )
+
+
+def verify_snapshot(
+    data: dict[str, Any],
+    snapshot: Path,
+    *,
+    public_key: Path | None,
+    require_signatures: bool,
+    expected_revision: str | None = None,
+) -> None:
+    revision = expected_revision or snapshot.name
+    architecture_dirs = {
+        path.name for path in snapshot.iterdir() if path.is_dir()
+    }
+    if architecture_dirs != set(data["architectures"]):
+        raise PackagingError(
+            "snapshot architecture inventory does not match the release set"
+        )
+
+    for architecture in data["architectures"]:
+        repository = snapshot / architecture
+        binary_rpms = sorted((repository / "Packages").glob("*.rpm"))
+        source_rpms = sorted((repository / "SRPMS").glob("*.rpm"))
+        if not binary_rpms or not source_rpms:
+            raise PackagingError(
+                f"{revision}/{architecture}: incomplete RPM inventory"
+            )
+        if require_signatures:
+            if public_key is None or not public_key.is_file():
+                raise PackagingError(
+                    "a trusted public keyring is required for verification"
+                )
+            verify_signatures(
+                repository,
+                binary_rpms + source_rpms,
+                public_key,
+            )
+
+        manifest_path = repository / "manifest.json"
+        repomd_path = repository / "repodata" / "repomd.xml"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise PackagingError(
+                f"{revision}/{architecture}: invalid signed manifest"
+            ) from error
+
+        expected_header = {
+            "schema_version": 1,
+            "name": data["name"],
+            "revision": revision,
+            "fedora_release": data["fedora_release"],
+            "architecture": architecture,
+            "repomd_sha256": sha256(repomd_path),
+        }
+        if set(manifest) != set(expected_header) | {
+            "packages",
+            "source_packages",
+        }:
+            raise PackagingError(
+                f"{revision}/{architecture}: unexpected manifest fields"
+            )
+        for key, value in expected_header.items():
+            if manifest.get(key) != value:
+                raise PackagingError(
+                    f"{revision}/{architecture}: manifest {key} mismatch"
+                )
+
+        expected_packages = binary_manifest_entries(repository)
+        if manifest.get("packages") != expected_packages:
+            raise PackagingError(
+                f"{revision}/{architecture}: binary RPM manifest mismatch"
+            )
+
+        source_entries = manifest.get("source_packages")
+        if not isinstance(source_entries, list):
+            raise PackagingError(
+                f"{revision}/{architecture}: source manifest is not a list"
+            )
+        actual_sources = {path.name: path for path in source_rpms}
+        recorded_sources: set[str] = set()
+        recorded_source_packages: set[str] = set()
+        for entry in source_entries:
+            if not isinstance(entry, dict) or set(entry) != {
+                "source_package",
+                "filename",
+                "sha256",
+                "sources",
+            }:
+                raise PackagingError(
+                    f"{revision}/{architecture}: invalid source manifest entry"
+                )
+            source_package = entry["source_package"]
+            filename = entry["filename"]
+            if (
+                not isinstance(source_package, str)
+                or not PACKAGE_RE.fullmatch(source_package)
+                or source_package in recorded_source_packages
+                or not isinstance(filename, str)
+                or filename in recorded_sources
+                or filename not in actual_sources
+            ):
+                raise PackagingError(
+                    f"{revision}/{architecture}: inconsistent source inventory"
+                )
+            source_path = actual_sources[filename]
+            metadata = rpm_metadata(source_path)
+            if (
+                metadata["name"] != source_package
+                or entry["sha256"] != sha256(source_path)
+                or not isinstance(entry["sources"], list)
+            ):
+                raise PackagingError(
+                    f"{revision}/{architecture}: source RPM metadata mismatch"
+                )
+            for source in entry["sources"]:
+                if not isinstance(source, dict):
+                    raise PackagingError(
+                        f"{source_package}: invalid signed source record"
+                    )
+                validate_manifest_source(source_package, source)
+            recorded_sources.add(filename)
+            recorded_source_packages.add(source_package)
+
+        if recorded_sources != set(actual_sources):
+            raise PackagingError(
+                f"{revision}/{architecture}: source RPM inventory mismatch"
+            )
+        for package in expected_packages:
+            if package["source_rpm"] not in actual_sources:
+                raise PackagingError(
+                    f"{revision}/{architecture}: binary RPM has no signed SRPM"
+                )
+
+
+def set_tree_read_only(root: Path, read_only: bool) -> None:
+    directory_mode = 0o555 if read_only else 0o755
+    file_mode = 0o444 if read_only else 0o644
+    for path in sorted(root.rglob("*"), reverse=read_only):
+        path.chmod(directory_mode if path.is_dir() else file_mode)
+    root.chmod(directory_mode)
+
+
+def activate_snapshot(
+    release_root: Path,
+    revision: str,
+    *,
+    allow_regression: bool = False,
+) -> None:
+    snapshot = release_root / "releases" / revision
+    if not snapshot.is_dir():
+        raise PackagingError(f"snapshot does not exist: {snapshot}")
+    current = release_root / "current"
+    if current.is_symlink():
+        current_snapshot = current.resolve()
+        current_revision = current_snapshot.name
+        if (
+            not allow_regression
+            and revision_key(revision) < revision_key(current_revision)
+        ):
+            raise PackagingError(
+                f"refusing to regress current from {current_revision} "
+                f"to {revision}"
+            )
+        if current_revision == revision:
+            if current_snapshot == snapshot:
+                return
+            raise PackagingError(
+                f"current already uses revision name {revision}"
+            )
+    temporary = release_root / ".current.new"
+    temporary.unlink(missing_ok=True)
+    temporary.symlink_to(Path("releases") / revision)
+    os.replace(temporary, current)
+
+
+def activate_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    errors = validate_manifest(data)
+    if errors:
+        raise PackagingError("manifest must validate before activation")
+    revision = args.revision or data["revision"]
+    release_root = (
+        Path(args.output).resolve()
+        / "fedora"
+        / str(data["fedora_release"])
+    )
+    snapshot = release_root / "releases" / revision
+    if args.allow_unsigned and args.public_key:
+        raise PackagingError(
+            "--allow-unsigned and --public-key are mutually exclusive"
+        )
+    if not args.allow_unsigned and not args.public_key:
+        raise PackagingError(
+            "--public-key is required unless --allow-unsigned is explicit"
+        )
+    verify_snapshot(
+        data,
+        snapshot,
+        public_key=(
+            Path(args.public_key).resolve() if args.public_key else None
+        ),
+        require_signatures=not args.allow_unsigned,
+        expected_revision=revision,
+    )
+    if args.check_only:
+        if (release_root / "current").is_symlink():
+            current_revision = (release_root / "current").resolve().name
+            if revision_key(revision) < revision_key(current_revision):
+                raise PackagingError(
+                    f"refusing to regress current from {current_revision} "
+                    f"to {revision}"
+                )
+        print(snapshot)
+        return
+    activate_snapshot(release_root, revision)
+    print(release_root / "current")
+
+
+def rollback_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    errors = validate_manifest(data)
+    if errors:
+        raise PackagingError("manifest must validate before rollback")
+    release_root = (
+        Path(args.output).resolve()
+        / "fedora"
+        / str(data["fedora_release"])
+    )
+    snapshot = release_root / "releases" / args.revision
+    if not snapshot.is_dir():
+        raise PackagingError(f"snapshot does not exist: {snapshot}")
+    public_key = Path(args.public_key).resolve()
+    if not public_key.is_file():
+        raise PackagingError(f"rollback public key does not exist: {public_key}")
+    verify_snapshot(
+        data,
+        snapshot,
+        public_key=public_key,
+        require_signatures=True,
+        expected_revision=args.revision,
+    )
+    if args.check_only:
+        print(snapshot)
+        return
+
+    activate_snapshot(
+        release_root,
+        args.revision,
+        allow_regression=True,
+    )
+    print(release_root / "current")
+
+
+def snapshot_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    errors = validate_manifest(data)
+    if errors:
+        raise PackagingError("manifest must validate before publication")
+
+    requested_architectures = [
+        config_name.rsplit("-", 1)[-1] for config_name in args.config_name
+    ]
+    if (
+        len(requested_architectures) != len(set(requested_architectures))
+        or set(requested_architectures) != set(data["architectures"])
+    ):
+        raise PackagingError(
+            "publication requires exactly these architectures: "
+            + ", ".join(data["architectures"])
+        )
+
+    output_root = Path(args.output).resolve()
+    fedora_root = output_root / "fedora" / str(data["fedora_release"])
+    releases_root = fedora_root / "releases"
+    snapshot = releases_root / data["revision"]
+    if snapshot.exists():
+        raise PackagingError(f"immutable snapshot already exists: {snapshot}")
+
+    signed = bool(args.signing_key)
+    if signed and not args.public_key:
+        raise PackagingError("--public-key is required with --signing-key")
+
+    staging = releases_root / f".{data['revision']}.staging-{os.getpid()}"
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    timestamp = revision_epoch(data["revision"])
+
+    try:
+        for config_name in args.config_name:
+            architecture = config_name.rsplit("-", 1)[-1]
+            if architecture not in data["architectures"]:
+                raise PackagingError(
+                    f"{config_name}: unsupported architecture {architecture}"
+                )
+            repository = staging / architecture
+            (repository / "Packages").mkdir(parents=True)
+            artifacts = populate_repository(
+                data,
+                Path(args.input),
+                config_name,
+                repository,
+                require_complete=True,
+            )
+            for package_artifacts in artifacts.values():
+                for srpm in package_artifacts["srpms"]:
+                    copy_unique(srpm, repository / "SRPMS" / srpm.name)
+
+            copied = sorted((repository / "Packages").glob("*.rpm"))
+            copied += sorted((repository / "SRPMS").glob("*.rpm"))
+            if signed:
+                sign_rpms(copied, args.signing_key)
+
+            normalize_tree_mtime(repository, timestamp)
+            refresh_repository(repository, data["revision"])
+            manifest = snapshot_manifest(
+                data, architecture, repository, artifacts
+            )
+            manifest_path = repository / "manifest.json"
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            os.utime(manifest_path, (timestamp, timestamp))
+            if signed:
+                sign_file(manifest_path, args.signing_key)
+                sign_repomd(repository, args.signing_key)
+                verify_signatures(
+                    repository,
+                    copied,
+                    Path(args.public_key),
+                )
+
+        render_repo_config(
+            staging / "hyprwm-fedora.repo",
+            fedora_release=data["fedora_release"],
+            baseurl=args.baseurl,
+            signed=signed,
+        )
+        if args.public_key:
+            copy_unique(
+                Path(args.public_key),
+                staging / "RPM-GPG-KEY-hyprwm-fedora",
+            )
+        normalize_tree_mtime(staging, timestamp)
+        verify_snapshot(
+            data,
+            staging,
+            public_key=(
+                Path(args.public_key).resolve()
+                if args.public_key
+                else None
+            ),
+            require_signatures=signed,
+            expected_revision=data["revision"],
+        )
+        set_tree_read_only(staging, True)
+        releases_root.mkdir(parents=True, exist_ok=True)
+        staging.rename(snapshot)
+        if args.activate:
+            activate_snapshot(fedora_root, data["revision"])
+    except BaseException:
+        if staging.exists():
+            set_tree_read_only(staging, False)
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    print(snapshot)
+
+
+def bundle_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    snapshot = (
+        Path(args.input).resolve()
+        if args.input
+        else (
+            ROOT
+            / "repo"
+            / "public"
+            / "fedora"
+            / str(data["fedora_release"])
+            / "releases"
+            / data["revision"]
+        )
+    )
+    if not snapshot.is_dir():
+        raise PackagingError(f"snapshot does not exist: {snapshot}")
+    output_path = (
+        Path(args.output).resolve()
+        if args.output
+        else (
+            ROOT
+            / f"hyprwm-fedora-{data['fedora_release']}-{data['revision']}.tar.zst"
+        )
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = revision_epoch(data["revision"])
+    require_command("tar")
+    require_command("zstd")
+    run(
+        [
+            "tar",
+            "--sort=name",
+            f"--mtime=@{timestamp}",
+            "--owner=0",
+            "--group=0",
+            "--numeric-owner",
+            "--zstd",
+            "-cf",
+            str(output_path),
+            "-C",
+            str(snapshot.parent),
+            snapshot.name,
+        ]
+    )
+    checksum_path = output_path.with_name(output_path.name + ".sha256")
+    checksum_path.write_text(
+        f"{sha256(output_path)}  {output_path.name}\n",
+        encoding="utf-8",
+    )
+    if args.signing_key:
+        if not args.public_key:
+            raise PackagingError("--public-key is required with --signing-key")
+        sign_file(checksum_path, args.signing_key)
+        verify_detached_signature(checksum_path, Path(args.public_key))
+    print(output_path)
+
+
+def github_tag_source(
+    source: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    parsed = urlparse(source["url"])
+    if parsed.hostname != "github.com":
+        return None
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) < 5:
+        return None
+    owner, repository = parts[0], parts[1]
+    if parts[2:4] == ["releases", "download"]:
+        return owner, repository, parts[4]
+    if parts[2:5] == ["archive", "refs", "tags"] and len(parts) >= 6:
+        tag = parts[5]
+        for suffix in (".tar.gz", ".tar.xz", ".zip"):
+            if tag.endswith(suffix):
+                tag = tag[: -len(suffix)]
+                break
+        return owner, repository, tag
+    return None
+
+
+def github_json(url: str) -> Any:
+    command = [
+        "curl",
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--header",
+        "Accept: application/vnd.github+json",
+        "--header",
+        "X-GitHub-Api-Version: 2022-11-28",
+    ]
+    token = os.environ.get("GITHUB_TOKEN")
+    if False and token:
+        command.extend(["--header", f"Authorization: Bearer {token}"])
+    if token:
+        command.extend(["--oauth2-bearer", token])
+    command.append(url)
+    try:
+        return json.loads(output(command))
+    except (subprocess.CalledProcessError, json.JSONDecodeError) as error:
+        raise PackagingError(f"GitHub API request failed: {url}") from error
+
+
+def latest_github_tag(owner: str, repository: str) -> str:
+    release_url = (
+        f"https://api.github.com/repos/{owner}/{repository}/releases/latest"
+    )
+    try:
+        release = github_json(release_url)
+    except PackagingError:
+        release = None
+    if isinstance(release, dict) and isinstance(release.get("tag_name"), str):
+        return release["tag_name"]
+
+    tags = github_json(
+        f"https://api.github.com/repos/{owner}/{repository}/tags?per_page=1"
+    )
+    if not isinstance(tags, list) or not tags:
+        raise PackagingError(f"{owner}/{repository}: no upstream tags found")
+    tag = tags[0].get("name")
+    if not isinstance(tag, str) or not tag:
+        raise PackagingError(f"{owner}/{repository}: malformed tag response")
+    return tag
+
+
+def check_updates_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    errors = validate_manifest(data)
+    if errors:
+        raise PackagingError("manifest must validate before checking updates")
+
+    cache: dict[tuple[str, str], str] = {}
+    reports: list[dict[str, str]] = []
+    for package_name, package in selected_packages(data, args.packages or None):
+        update_policy = package.get("update_policy", "automatic")
+        if update_policy != "automatic":
+            reports.append(
+                {
+                    "package": package_name,
+                    "status": update_policy,
+                    "current": package["version"],
+                    "latest": "",
+                    "repository": "",
+                    "reason": package["update_reason"],
+                }
+            )
+            continue
+        coordinates = None
+        for source in package["sources"]:
+            if source.get("provenance") != "official-upstream":
+                continue
+            coordinates = github_tag_source(source)
+            if coordinates:
+                break
+        if not coordinates:
+            reports.append(
+                {
+                    "package": package_name,
+                    "status": "manual",
+                    "current": package["version"],
+                    "latest": "",
+                    "repository": "",
+                    "reason": "No supported automatic tag source",
+                }
+            )
+            continue
+
+        owner, repository, current_tag = coordinates
+        key = (owner, repository)
+        if key not in cache:
+            cache[key] = latest_github_tag(owner, repository)
+        latest_tag = cache[key]
+        reports.append(
+            {
+                "package": package_name,
+                "status": (
+                    "current" if latest_tag == current_tag else "update-available"
+                ),
+                "current": current_tag,
+                "latest": latest_tag,
+                "repository": f"{owner}/{repository}",
+                "reason": "",
+            }
+        )
+
+    if args.json:
+        print(json.dumps(reports, indent=2, sort_keys=True))
+    else:
+        for report in reports:
+            print(
+                f"{report['package']}: {report['status']} "
+                f"(current={report['current'] or '-'}, "
+                f"latest={report['latest'] or '-'})"
+            )
+    if args.fail_on_updates and any(
+        report["status"] == "update-available" for report in reports
+    ):
+        raise PackagingError("upstream updates are available")
+
+
+def changelog_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    packages = dict(selected_packages(data, [args.package]))
+    package = packages[args.package]
+    version = args.version or package["version"]
+    release = args.release or package["release"]
+    date = (
+        dt.date.fromisoformat(args.date)
+        if args.date
+        else dt.datetime.now(dt.timezone.utc).date()
+    )
+    header = (
+        f"* {date.strftime('%a %b %d %Y')} {args.maintainer} "
+        f"- {version}-{release}"
+    )
+    entry = header + "\n" + "\n".join(f"- {change}" for change in args.change)
+    if not args.apply:
+        print(entry)
+        return
+
+    spec = spec_path(args.package, package)
+    text = spec.read_text(encoding="utf-8")
+    marker = "%changelog\n"
+    if marker not in text:
+        raise PackagingError(f"{spec}: missing %changelog section")
+    updated = text.replace(marker, marker + entry + "\n", 1)
+    atomic_write_text(spec, updated)
+    print(spec)
+
+
+def resolve_github_tag(owner: str, repository: str, tag: str) -> str:
+    refs = output(
+        [
+            "git",
+            "ls-remote",
+            f"https://github.com/{owner}/{repository}.git",
+            f"refs/tags/{tag}",
+            f"refs/tags/{tag}^{{}}",
+        ]
+    ).splitlines()
+    if not refs:
+        raise PackagingError(f"{owner}/{repository}: tag not found: {tag}")
+    dereferenced = [
+        line.split()[0] for line in refs if line.endswith(f"refs/tags/{tag}^{{}}")
+    ]
+    return dereferenced[0] if dereferenced else refs[0].split()[0]
+
+
+def changelog_entry(
+    *,
+    date: dt.date,
+    maintainer: str,
+    version: str,
+    release: int,
+    changes: list[str],
+) -> str:
+    header = (
+        f"* {date.strftime('%a %b %d %Y')} {maintainer} "
+        f"- {version}-{release}"
+    )
+    return header + "\n" + "\n".join(f"- {change}" for change in changes)
+
+
+def prepare_update_command(args: argparse.Namespace) -> None:
+    data = load_manifest()
+    packages = dict(selected_packages(data, [args.package]))
+    package = packages[args.package]
+    if args.package == "hyprland":
+        raise PackagingError(
+            "Hyprland updates require an atomic compatibility transaction "
+            "with the exact hyprland-plugins commit; use a reviewed manual PR"
+        )
+    if (
+        package.get("update_policy", "automatic") != "automatic"
+        and not args.force
+    ):
+        raise PackagingError(
+            f"{args.package}: update policy is "
+            f"{package.get('update_policy')}: {package.get('update_reason')}"
+        )
+    if not package["sources"]:
+        raise PackagingError(f"{args.package}: package has no upstream source")
+
+    source = package["sources"][0]
+    coordinates = github_tag_source(source)
+    if not coordinates:
+        raise PackagingError(
+            f"{args.package}: automatic updates require a GitHub tag source"
+        )
+    owner, repository, current_tag = coordinates
+    new_tag = args.tag
+    new_version = args.version or new_tag.removeprefix("v")
+    commit = resolve_github_tag(owner, repository, new_tag)
+    old_version = package["version"]
+    old_release = package["release"]
+
+    new_url = source["url"].replace(current_tag, new_tag).replace(
+        old_version, new_version
+    )
+    new_filename = source["filename"].replace(
+        old_version, new_version
+    ).replace(current_tag, new_tag)
+
+    with tempfile.TemporaryDirectory(prefix="hyprwm-update-") as temporary:
+        archive = Path(temporary) / new_filename
+        run(
+            [
+                "curl",
+                "--fail",
+                "--location",
+                "--proto",
+                "=https",
+                "--tlsv1.2",
+                "--retry",
+                "3",
+                "--output",
+                str(archive),
+                new_url,
+            ]
+        )
+        digest = sha256(archive)
+    if (
+        new_tag == current_tag
+        and new_version == old_version
+        and digest == source["sha256"]
+    ):
+        raise PackagingError(f"{args.package}: already locked to {new_tag}")
+
+    proposal = {
+        "package": args.package,
+        "old_version": old_version,
+        "new_version": new_version,
+        "tag": new_tag,
+        "commit": commit,
+        "source": {
+            "filename": new_filename,
+            "url": new_url,
+            "sha256": digest,
+        },
+    }
+    if not args.apply:
+        print(json.dumps(proposal, indent=2, sort_keys=True))
+        return
+
+    spec = spec_path(args.package, package)
+    spec_text = spec.read_text(encoding="utf-8")
+    spec_text, version_count = re.subn(
+        r"^Version:\s*\S+\s*$",
+        f"Version:        {new_version}",
+        spec_text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    spec_text, release_count = re.subn(
+        r"^Release:\s*\d+%\{\?dist\}\s*$",
+        "Release:        1%{?dist}",
+        spec_text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if version_count != 1 or release_count != 1:
+        raise PackagingError(f"{spec}: cannot update Version/Release fields")
+    if re.search(r"^%global upstream_commit\s+\S+\s*$", spec_text, re.MULTILINE):
+        spec_text, commit_count = re.subn(
+            r"^%global upstream_commit\s+\S+\s*$",
+            f"%global upstream_commit {commit}",
+            spec_text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        if commit_count != 1:
+            raise PackagingError(f"{spec}: cannot update upstream_commit")
+
+    changes = args.change or [f"Update to upstream {new_version}"]
+    date = (
+        dt.date.fromisoformat(args.date)
+        if args.date
+        else dt.datetime.now(dt.timezone.utc).date()
+    )
+    entry = changelog_entry(
+        date=date,
+        maintainer=args.maintainer,
+        version=new_version,
+        release=1,
+        changes=changes,
+    )
+    if "%changelog\n" not in spec_text:
+        raise PackagingError(f"{spec}: missing %changelog section")
+    spec_text = spec_text.replace("%changelog\n", "%changelog\n" + entry + "\n", 1)
+
+    package["version"] = new_version
+    package["release"] = 1
+    source.update(
+        {
+            "filename": new_filename,
+            "url": new_url,
+            "sha256": digest,
+            "reference": (
+                f"{owner}/{repository} tag {new_tag} at commit {commit}"
+            ),
+        }
+    )
+    pending_files = {spec: spec_text}
+
+    meta_package = data["packages"].get("hyprwm-meta")
+    if meta_package:
+        meta_spec = spec_path("hyprwm-meta", meta_package)
+        meta_text = meta_spec.read_text(encoding="utf-8")
+        requirement_pattern = re.compile(
+            rf"^(Requires:\s+{re.escape(args.package)}(?:-\S+)?\s*=\s*)"
+            rf"{re.escape(old_version)}-{old_release}%\{{\?dist\}}\s*$",
+            re.MULTILINE,
+        )
+        meta_text, meta_requirement_count = requirement_pattern.subn(
+            rf"\g<1>{new_version}-1%{{?dist}}",
+            meta_text,
+        )
+        if meta_requirement_count:
+            meta_release = int(meta_package["release"]) + 1
+            meta_text, meta_release_count = re.subn(
+                r"^Release:\s*\d+%\{\?dist\}\s*$",
+                f"Release:        {meta_release}%{{?dist}}",
+                meta_text,
+                count=1,
+                flags=re.MULTILINE,
+            )
+            if meta_release_count != 1:
+                raise PackagingError(
+                    f"{meta_spec}: cannot update meta package Release"
+                )
+            meta_entry = changelog_entry(
+                date=date,
+                maintainer=args.maintainer,
+                version=meta_package["version"],
+                release=meta_release,
+                changes=[
+                    f"Update locked {args.package} requirement to {new_version}-1"
+                ],
+            )
+            if "%changelog\n" not in meta_text:
+                raise PackagingError(f"{meta_spec}: missing %changelog section")
+            meta_text = meta_text.replace(
+                "%changelog\n",
+                "%changelog\n" + meta_entry + "\n",
+                1,
+            )
+            meta_package["release"] = meta_release
+            pending_files[meta_spec] = meta_text
+            proposal["hyprwm_meta_release"] = meta_release
+
+    atomic_write_text(MANIFEST_PATH, json.dumps(data, indent=2) + "\n")
+    for path, content in pending_files.items():
+        atomic_write_text(path, content)
+    print(json.dumps(proposal, indent=2, sort_keys=True))
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(
+        description="Build and publish the HyprWM Fedora RPM set"
+    )
+    subparsers = result.add_subparsers(dest="command", required=True)
+
+    validate = subparsers.add_parser("validate")
+    validate.set_defaults(handler=validate_command)
+
+    fetch = subparsers.add_parser("fetch")
+    fetch.add_argument("packages", nargs="*")
+    fetch.set_defaults(handler=fetch_command)
+
+    srpm = subparsers.add_parser("srpm")
+    srpm.add_argument("package")
+    srpm.add_argument(
+        "--mock-config", default="mock/fedora-44-x86_64.cfg"
+    )
+    srpm.set_defaults(handler=srpm_command)
+
+    build = subparsers.add_parser("build")
+    build.add_argument("package")
+    build.add_argument(
+        "--mock-config", default="mock/fedora-44-x86_64.cfg"
+    )
+    build.add_argument("--repo", default=".work/repository")
+    build.set_defaults(handler=build_command)
+
+    build_set = subparsers.add_parser("build-set")
+    build_set.add_argument("packages", nargs="*")
+    build_set.add_argument(
+        "--mock-config", default="mock/fedora-44-x86_64.cfg"
+    )
+    build_set.add_argument("--repo", default=".work/repository")
+    build_set.add_argument("--resume", action="store_true")
+    build_set.set_defaults(handler=build_set_command)
+
+    affected = subparsers.add_parser("affected")
+    affected.add_argument("packages", nargs="+")
+    affected.set_defaults(handler=affected_command)
+
+    repository = subparsers.add_parser("repo")
+    repository.add_argument("--input", default="results")
+    repository.add_argument("--output", default=".work/repository")
+    repository.add_argument(
+        "--config-name", default="fedora-44-x86_64"
+    )
+    repository.add_argument("--require-complete", action="store_true")
+    repository.set_defaults(handler=repo_command)
+
+    audit = subparsers.add_parser("audit")
+    audit.add_argument("--input", default="results")
+    audit.add_argument(
+        "--config-name", default="fedora-44-x86_64"
+    )
+    audit.add_argument("--require-complete", action="store_true")
+    audit.set_defaults(handler=audit_command)
+
+    snapshot = subparsers.add_parser("snapshot")
+    snapshot.add_argument("--input", default="results")
+    snapshot.add_argument("--output", default="repo/public")
+    snapshot.add_argument(
+        "--config-name",
+        nargs="+",
+        default=["fedora-44-x86_64", "fedora-44-aarch64"],
+        help="results configuration directories to publish atomically",
+    )
+    snapshot.add_argument(
+        "--baseurl",
+        default="file:///srv/hyprwm-fedora/fedora/44/current",
+    )
+    snapshot.add_argument("--signing-key")
+    snapshot.add_argument("--public-key")
+    snapshot.add_argument(
+        "--activate",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    snapshot.set_defaults(handler=snapshot_command)
+
+    activate = subparsers.add_parser("activate")
+    activate.add_argument("--output", default="repo/public")
+    activate.add_argument("--revision")
+    activate.add_argument("--check-only", action="store_true")
+    activate.add_argument("--public-key")
+    activate.add_argument("--allow-unsigned", action="store_true")
+    activate.set_defaults(handler=activate_command)
+
+    rollback = subparsers.add_parser("rollback")
+    rollback.add_argument("--output", default="repo/public")
+    rollback.add_argument("--revision", required=True)
+    rollback.add_argument("--public-key", required=True)
+    rollback.add_argument("--check-only", action="store_true")
+    rollback.set_defaults(handler=rollback_command)
+
+    bundle = subparsers.add_parser("bundle")
+    bundle.add_argument("--input")
+    bundle.add_argument("--output")
+    bundle.add_argument("--signing-key")
+    bundle.add_argument("--public-key")
+    bundle.set_defaults(handler=bundle_command)
+
+    updates = subparsers.add_parser("check-updates")
+    updates.add_argument("packages", nargs="*")
+    updates.add_argument("--json", action="store_true")
+    updates.add_argument("--fail-on-updates", action="store_true")
+    updates.set_defaults(handler=check_updates_command)
+
+    changelog = subparsers.add_parser("changelog")
+    changelog.add_argument("package")
+    changelog.add_argument("--version")
+    changelog.add_argument("--release", type=int)
+    changelog.add_argument("--date")
+    changelog.add_argument(
+        "--maintainer", default="Rahul <rahul@localhost>"
+    )
+    changelog.add_argument("--change", action="append", required=True)
+    changelog.add_argument("--apply", action="store_true")
+    changelog.set_defaults(handler=changelog_command)
+
+    prepare_update = subparsers.add_parser("prepare-update")
+    prepare_update.add_argument("package")
+    prepare_update.add_argument("--tag", required=True)
+    prepare_update.add_argument("--version")
+    prepare_update.add_argument("--date")
+    prepare_update.add_argument(
+        "--maintainer", default="Rahul <rahul@localhost>"
+    )
+    prepare_update.add_argument("--change", action="append")
+    prepare_update.add_argument("--force", action="store_true")
+    prepare_update.add_argument("--apply", action="store_true")
+    prepare_update.set_defaults(handler=prepare_update_command)
+    return result
+
+
+def main() -> int:
+    args = parser().parse_args()
+    try:
+        args.handler(args)
+    except (PackagingError, subprocess.CalledProcessError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

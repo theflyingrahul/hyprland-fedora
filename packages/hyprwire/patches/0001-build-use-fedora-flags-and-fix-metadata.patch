@@ -1,0 +1,49 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] build: use Fedora flags and fix installed metadata
+
+Keep tests available in release builds, leave optimization to Fedora, and
+remove a command for a script absent from the release archive. Advertise the
+public hyprutils dependency and use the project version in scanner metadata.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -43,10 +43,7 @@ if(CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES DEBUG)
+   message(STATUS "Configuring hyprwire in Debug")
+   add_compile_definitions(HYPRWIRE_DEBUG)
+-  set(BUILD_TESTING ON)
+ else()
+-  add_compile_options(-O3)
+   message(STATUS "Configuring hyprwire in Release")
+-  set(BUILD_TESTING OFF)
+ endif()
+ 
+ add_compile_definitions(HT_HIDDEN=public)
+@@ -56,9 +53,6 @@ add_compile_definitions(HT_HIDDEN=public)
+ file(GLOB_RECURSE SRCFILES CONFIGURE_DEPENDS "src/*.cpp" "include/*.hpp")
+ file(GLOB_RECURSE PUBLIC_HEADERS CONFIGURE_DEPENDS "include/*.hpp")
+ 
+-execute_process(COMMAND ./scripts/generateShaderIncludes.sh
+-                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+-
+ add_library(hyprwire SHARED ${SRCFILES})
+ target_include_directories(
+   hyprwire
+--- a/hyprwire.pc.in
++++ b/hyprwire.pc.in
+@@ -6,5 +6,6 @@ Name: hyprwire
+ URL: https://github.com/hyprwm/hyprwire
+ Description: A fast and consistent wire protocol for IPC 
+ Version: @HYPRWIRE_VERSION@
++Requires: hyprutils
+ Cflags: -I${includedir}
+ Libs: -L${libdir} -lhyprwire
+--- a/scanner/CMakeLists.txt
++++ b/scanner/CMakeLists.txt
+@@ -51 +51 @@
+-  VERSION "${VERSION}" ARCH_INDEPENDENT
++  VERSION "${PROJECT_VERSION}" ARCH_INDEPENDENT
+--- a/scanner/hyprwire-scanner.pc.in
++++ b/scanner/hyprwire-scanner.pc.in
+@@ -6 +6 @@
+-Version: @VERSION@
++Version: @HYPRWIRE_VERSION@

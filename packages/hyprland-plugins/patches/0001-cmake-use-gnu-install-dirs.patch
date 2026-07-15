@@ -1,0 +1,17 @@
+From: HyprWM Fedora maintainers
+Subject: [PATCH] cmake: use GNU installation directories
+
+Bare install(TARGETS) calls otherwise default to /usr/lib on 64-bit Fedora.
+Load GNUInstallDirs so plugin libraries follow the configured architecture
+libdir before the RPM moves them into Hyprland's private plugin directory.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -4,6 +4,8 @@ project(hyprland-plugins
+     LANGUAGES CXX
+ )
+ 
++include(GNUInstallDirs)
++
+ set(CMAKE_CXX_STANDARD 23)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)

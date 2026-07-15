@@ -1,0 +1,59 @@
+name: Roll back repository
+
+on:
+  repository_dispatch:
+    types:
+      - rollback
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-publication
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ${{ fromJSON('["self-hosted","linux","x64","fedora-44","ephemeral"]') }}
+    timeout-minutes: 120
+    environment: release
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Install verification dependencies
+        run: |
+          sudo dnf --assumeyes --setopt=install_weak_deps=False install \
+            dnf5-plugins \
+            gnupg2 \
+            python3 \
+            python3-jsonschema \
+            rpm
+      - name: Verify and activate retained snapshot
+        env:
+          REVISION: ${{ github.event.client_payload.revision }}
+          REPOSITORY_PUBLISH_ROOT: ${{ vars.REPOSITORY_PUBLISH_ROOT }}
+          RPM_GPG_TRUSTED_PUBLIC_KEYS: ${{ secrets.RPM_GPG_TRUSTED_PUBLIC_KEYS }}
+        run: |
+          test -n "$REVISION"
+          test -n "$REPOSITORY_PUBLISH_ROOT"
+          test -n "$RPM_GPG_TRUSTED_PUBLIC_KEYS"
+          printf '%s\n' "$RPM_GPG_TRUSTED_PUBLIC_KEYS" \
+            > "$RUNNER_TEMP/RPM-GPG-TRUSTED-KEYS"
+          python3 tooling/hyprwm-packaging rollback \
+            --output "$REPOSITORY_PUBLISH_ROOT" \
+            --revision "$REVISION" \
+            --public-key "$RUNNER_TEMP/RPM-GPG-TRUSTED-KEYS" \
+            --check-only
+          snapshot="$REPOSITORY_PUBLISH_ROOT/fedora/44/releases/$REVISION"
+          for architecture in x86_64 aarch64; do
+            dnf5 --forcearch="$architecture" \
+              --repofrompath="hyprwm,file://$snapshot/$architecture" \
+              repoclosure \
+              --arch="$architecture,noarch" \
+              --check=hyprwm \
+              --newest
+          done
+          python3 tooling/hyprwm-packaging rollback \
+            --output "$REPOSITORY_PUBLISH_ROOT" \
+            --revision "$REVISION" \
+            --public-key "$RUNNER_TEMP/RPM-GPG-TRUSTED-KEYS"

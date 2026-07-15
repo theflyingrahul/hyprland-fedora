@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE comps PUBLIC "-//Red Hat, Inc.//DTD Comps info//EN" "comps.dtd">
+<comps>
+  <group>
+    <id>hyprland-desktop</id>
+    <name>Hyprland Desktop</name>
+    <description>Supported Hyprland compositor and desktop integration</description>
+    <default>false</default>
+    <uservisible>true</uservisible>
+    <packagelist>
+      <packagereq type="mandatory">hyprland-desktop</packagereq>
+    </packagelist>
+  </group>
+  <group>
+    <id>hyprwm-complete</id>
+    <name>Complete HyprWM Environment</name>
+    <description>All stable HyprWM applications supported by this repository</description>
+    <default>false</default>
+    <uservisible>true</uservisible>
+    <packagelist>
+      <packagereq type="mandatory">hyprwm-complete</packagereq>
+    </packagelist>
+  </group>
+  <category>
+    <id>hyprwm</id>
+    <name>HyprWM</name>
+    <description>HyprWM compositor and applications</description>
+    <display_order>90</display_order>
+    <grouplist>
+      <groupid>hyprland-desktop</groupid>
+      <groupid>hyprwm-complete</groupid>
+    </grouplist>
+  </category>
+</comps>
