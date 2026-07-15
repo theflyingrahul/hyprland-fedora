@@ -25,6 +25,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Validate manifests and specs
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           make validate
           make test-tooling
           make check-docs
