@@ -17,6 +17,7 @@ implementation runbooks for the HyprWM Fedora packaging project.
 10. [Primary source index](source-index.md)
 11. [Implementation and maintenance guide](implementation-guide.md)
 12. [Graphical release smoke tests](graphical-smoke-tests.md)
+13. [GitHub repository configuration](github-configuration.md)
 
 ## Evidence rules
 
