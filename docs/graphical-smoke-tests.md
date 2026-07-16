@@ -12,6 +12,9 @@ real DRM, input, PipeWire, D-Bus, systemd user sessions, and SELinux enforcing.
 - Verify package and repository metadata signatures.
 - Install `hyprland-desktop`; repeat the optional-application section with
   `hyprwm-complete`.
+- With `hyprwm-complete`, confirm the first-run welcome screen detects the
+  libexec-installed polkit agent and portal backend and reports no mandatory
+  component as missing.
 - Preserve the DNF transaction ID and repository revision with the test
   results.
 
@@ -49,24 +52,30 @@ real DRM, input, PipeWire, D-Bus, systemd user sessions, and SELinux enforcing.
 
 1. Confirm `xdg-desktop-portal` selects the Hyprland backend while other
    installed portal backends remain co-installable.
-2. Test full-screen, output, window, and region screenshots.
+2. Test full-screen, output, window, and region screenshots with grim and
+   slurp.
 3. Test color picking with hyprpicker and the slurp fallback.
 4. Start a PipeWire screen-cast from a browser and conferencing client,
    validate the Qt share picker, audio/video continuity, cancellation, and
    stream teardown.
 5. Verify D-Bus activation names, user-unit state, and portal logs.
 
-## Optional applications and Qt
+## Optional applications and toolkits
 
+- Launch Kitty and Dolphin, display a notification through Mako, start Waybar,
+  copy/paste through wl-clipboard, and persist and retrieve clipboard history
+  through Cliphist.
+- Verify Noto Sans text and Font Awesome status-bar icons render correctly.
+- Configure a GTK theme with LXAppearance.
 - Exercise launcher search providers, Unicode, calculator, desktop entries,
   and explicit options.
 - Exercise PipeWire device and stream controls in hyprpwcenter.
 - Exercise the shutdown UI without granting unexpected privileges.
 - Verify hyprsysteminfo reports the packaged compositor and hardware.
 - Launch every hyprland-guiutils executable.
-- Set the Hyprland Qt platform theme and Quick Controls style, then test Qt
-  Widgets and QML applications for startup, colors, icons, dialogs, and
-  Wayland operation.
+- Set the Hyprland Qt platform theme and Quick Controls style, then test Qt 5
+  and Qt 6 Widgets and QML applications for startup, colors, icons, dialogs,
+  and native Wayland operation.
 
 ## Plugins
 

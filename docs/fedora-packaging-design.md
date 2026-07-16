@@ -110,7 +110,7 @@ ever be packaged.
 | `hyprqt6engine` | same name | Qt platform-theme/plugin files |
 | `hyprland-qt-support` | same name | QML style-provider module |
 | `hyprland-plugins` | four plugin packages plus `hyprland-plugins` meta | Per-plugin installation/removal with one source build |
-| `hyprwm-meta` | `hyprland-desktop`, `hyprwm-complete` | Noarch dependency-only packages |
+| `hyprwm-meta` | `hyprland-desktop`, `hyprwm-complete` | Noarch dependency-only packages for the supported baseline and maximal environment |
 | `glaze` | `glaze-devel` | Header-only C++ dependency and CMake package needed by hyprpm and newer apps |
 | `lua5.5` | `lua5.5`, `lua5.5-libs`, `lua5.5-devel` | Parallel-installable Lua 5.5 tool, library, headers, and `lua5.5.pc` for Fedora 44 |
 | `hyprwm-fedora-release-local` | same name | Unsigned local filesystem repository configuration; signed snapshots distribute their checked `.repo` file and public key separately |
@@ -431,9 +431,26 @@ weak dependencies are globally disabled.
 
 ### `hyprwm-complete`
 
-Requires `hyprland-desktop` and every stable optional Tier 3 application.
-The local plugin manager and plugin RPMs remain separate opt-ins because of
-their toolchain footprint, tighter ABI, and support surface.
+Requires `hyprland-desktop`, every stable optional Tier 3 application, and the
+exact official plugin RPM set. It also selects a concrete, tested Fedora
+environment matching the first-run welcome screen:
+
+- kitty terminal;
+- Dolphin file manager;
+- Mako notification daemon;
+- Waybar status bar;
+- PipeWire and WirePlumber;
+- Qt 5 and Qt 6 Wayland backends;
+- Noto Sans and Font Awesome fonts;
+- grim and slurp for screenshots;
+- wl-clipboard and cliphist;
+- LXAppearance for GTK themes;
+- the GTK portal backend for interfaces not implemented by the Hyprland
+  backend.
+
+This is the maximal ready-to-use installation set. The local `hyprpm` plugin
+manager remains a separate opt-in because it installs a compiler toolchain and
+duplicates the reproducible official plugin RPM path.
 
 ## Conflicts, Obsoletes, and transitions
 

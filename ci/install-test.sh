@@ -36,6 +36,27 @@ mock -r "$mock_config" --chroot -- rpm --query \
     xdg-desktop-portal-hyprland
 
 test_install True hyprwm-complete
+mock -r "$mock_config" --chroot -- rpm --query \
+    cliphist \
+    dolphin \
+    fontawesome-6-free-fonts \
+    google-noto-sans-fonts \
+    grim \
+    hyprland-plugins \
+    kitty \
+    lxappearance \
+    mako \
+    pipewire \
+    qt5-qtwayland \
+    qt6-qtwayland \
+    slurp \
+    waybar \
+    wireplumber \
+    wl-clipboard \
+    xdg-desktop-portal-gtk
+mock -r "$mock_config" --chroot -- bash -lc \
+    "hyprland-welcome --check-app hyprpolkitagent &&
+     hyprland-welcome --check-app xdg-desktop-portal-hyprland"
 package_names=$(
     for rpm in "$repository"/Packages/*.rpm; do
         rpm -qp --qf '%{NAME}\n' "$rpm"

@@ -1,0 +1,60 @@
+From: HyprWM Fedora maintainers
+Date: Thu, 16 Jul 2026 00:00:00 +0000
+Subject: [PATCH] welcome: detect components installed in libexec
+
+The portal backend and polkit agent are correctly installed in libexec rather
+than a user-facing binary directory. Search the configured libexec directory
+after PATH so the welcome screen recognizes both Fedora packages.
+---
+ utils/welcome/CMakeLists.txt | 4 +++-
+ utils/welcome/src/main.cpp   | 9 ++++++++-
+ 2 files changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/utils/welcome/CMakeLists.txt b/utils/welcome/CMakeLists.txt
+index ac60ef5..ae0df72 100644
+--- a/utils/welcome/CMakeLists.txt
++++ b/utils/welcome/CMakeLists.txt
+@@ -17,6 +17,7 @@ string(REPLACE "\"" " " GIT_COMMIT_MESSAGE_ESCAPED "${GIT_COMMIT_MESSAGE}")
+ target_compile_definitions(hyprland-welcome
+                            PRIVATE "-DGIT_COMMIT_HASH=\"${GIT_COMMIT_HASH}\"")
+ target_compile_definitions(hyprland-welcome PRIVATE "-DGIT_BRANCH=\"${GIT_BRANCH}\"")
++include(GNUInstallDirs)
+ target_compile_definitions(hyprland-welcome
+                            PRIVATE "-DGIT_COMMIT_MESSAGE=\"${GIT_COMMIT_MESSAGE_ESCAPED}\"")
+ target_compile_definitions(hyprland-welcome PRIVATE "-DGIT_DIRTY=\"${GIT_DIRTY}\"")
+@@ -35,6 +36,7 @@ target_link_libraries(
+   pthread
+   ${CMAKE_THREAD_LIBS_INIT})
+ 
+-include(GNUInstallDirs)
++target_compile_definitions(
++  hyprland-welcome PRIVATE HYPRLAND_GUIUTILS_LIBEXECDIR="${CMAKE_INSTALL_FULL_LIBEXECDIR}")
+ 
+ install(TARGETS hyprland-welcome)
+diff --git a/utils/welcome/src/main.cpp b/utils/welcome/src/main.cpp
+index ea7e96f..7fcce20 100644
+--- a/utils/welcome/src/main.cpp
++++ b/utils/welcome/src/main.cpp
+@@ -147,7 +147,11 @@ static bool appExists(std::string binName) {
+         return true;
+     }
+ 
+-    return false;
++    std::error_code ec;
++    return std::filesystem::exists(
++               std::filesystem::path(HYPRLAND_GUIUTILS_LIBEXECDIR) / binName,
++               ec) &&
++        !ec;
+ }
+ 
+ static bool appIsRunning(std::string binName) {
+@@ -597,6 +601,9 @@ static void initTabs() {
+ }
+ 
+ int main(int argc, char** argv, char** envp) {
++    if (argc == 3 && std::string_view{argv[1]} == "--check-app")
++        return appExists(argv[2]) ? 0 : 1;
++
+     state.backend = IBackend::create();
+ 
+     const auto FONT_SIZE   = CFontSize{CFontSize::HT_FONT_TEXT}.ptSize();

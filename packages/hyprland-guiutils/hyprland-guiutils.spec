@@ -2,13 +2,14 @@
 
 Name:           hyprland-guiutils
 Version:        0.2.1
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Native graphical utilities for Hyprland
 
 License:        BSD-3-Clause
 URL:            https://github.com/hyprwm/hyprland-guiutils
 Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
 Patch0:         0001-cmake-accept-release-metadata-without-git.patch
+Patch1:         0002-welcome-detect-libexec-components.patch
 
 ExcludeArch:    %{ix86}
 
@@ -56,6 +57,9 @@ do
     test -x "%{_vpath_builddir}/utils/${executable#hyprland-}/$executable" || \
         find %{_vpath_builddir} -type f -name "$executable" -perm /111 | grep -q .
 done
+grep -aFq '%{_libexecdir}' \
+    %{_vpath_builddir}/utils/welcome/hyprland-welcome
+%{_vpath_builddir}/utils/welcome/hyprland-welcome --check-app cmake
 
 %files
 %license LICENSE
@@ -67,6 +71,9 @@ done
 %{_bindir}/hyprland-welcome
 
 %changelog
+* Thu Jul 16 2026 Rahul <rahul@localhost> - 0.2.1-2
+- Detect packaged portal and polkit components installed in Fedora libexec
+
 * Wed Jul 15 2026 Rahul <rahul@localhost> - 0.2.1-1
 - Initial Fedora package for the official 0.2.1 release
 - Embed deterministic official tag metadata in release-archive builds

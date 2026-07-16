@@ -13,8 +13,8 @@
   </group>
   <group>
     <id>hyprwm-complete</id>
-    <name>Complete HyprWM Environment</name>
-    <description>All stable HyprWM applications supported by this repository</description>
+    <name>Maximal HyprWM Environment</name>
+    <description>Ready-to-use Hyprland desktop, all stable HyprWM applications, and official plugins</description>
     <default>false</default>
     <uservisible>true</uservisible>
     <packagelist>

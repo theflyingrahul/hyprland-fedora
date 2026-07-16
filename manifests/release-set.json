@@ -3,7 +3,7 @@
   "schema_version": 1,
   "name": "hyprwm-fedora-stable",
   "fedora_release": 44,
-  "revision": "2026.07.15-1",
+  "revision": "2026.07.16-1",
   "architectures": [
     "x86_64",
     "aarch64"
@@ -550,7 +550,7 @@
     "hyprland-guiutils": {
       "path": "packages/hyprland-guiutils",
       "version": "0.2.1",
-      "release": 1,
+      "release": 2,
       "tier": 5,
       "build_after": [
         "aquamarine",
@@ -592,7 +592,7 @@
     "hyprwm-meta": {
       "path": "packages/hyprwm-meta",
       "version": "1",
-      "release": 4,
+      "release": 5,
       "tier": 8,
       "update_policy": "manual",
       "update_reason": "Repository-authored meta package; update it with release-set membership and EVR changes.",
@@ -600,6 +600,7 @@
         "hypridle",
         "hyprland",
         "hyprland-guiutils",
+        "hyprland-plugins",
         "hyprland-qt-support",
         "hyprlauncher",
         "hyprlock",

@@ -32,6 +32,36 @@ class PackagingToolTests(unittest.TestCase):
             MODULE["validate_meta_requirements"](data, drifted)
         )
 
+    def test_complete_meta_installs_ready_desktop(self):
+        data = MODULE["load_manifest"]()
+        package = data["packages"]["hyprwm-meta"]
+        spec = MODULE["spec_path"]("hyprwm-meta", package).read_text()
+        requirements = {
+            line.split()[1]
+            for line in spec.splitlines()
+            if line.startswith("Requires:")
+        }
+        expected = {
+            "cliphist",
+            "dolphin",
+            "fontawesome-6-free-fonts",
+            "google-noto-sans-fonts",
+            "grim",
+            "hyprland-plugins",
+            "kitty",
+            "lxappearance",
+            "mako",
+            "pipewire",
+            "qt5-qtwayland",
+            "qt6-qtwayland",
+            "slurp",
+            "waybar",
+            "wireplumber",
+            "wl-clipboard",
+            "xdg-desktop-portal-gtk",
+        }
+        self.assertEqual(expected - requirements, set())
+
     def test_plugin_evr_drift_is_rejected(self):
         data = MODULE["load_manifest"]()
         package = data["packages"]["hyprland-plugins"]
