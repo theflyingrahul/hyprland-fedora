@@ -83,7 +83,7 @@ jobs:
       - name: Archive architecture results
         run: tar --zstd -cf hyprwm-fedora-44-${{ matrix.architecture }}.tar.zst results/fedora-44-${{ matrix.architecture }}
       - name: Upload architecture results
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: hyprwm-fedora-44-${{ matrix.architecture }}
           path: hyprwm-fedora-44-${{ matrix.architecture }}.tar.zst
@@ -252,7 +252,7 @@ jobs:
             --public-key "$RUNNER_TEMP/RPM-GPG-KEY-hyprwm-fedora" \
             --check-only
       - name: Upload signed repository
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: hyprwm-fedora-signed-repository
           path: |
